@@ -1,0 +1,708 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
+import '../services/transaction_service.dart';
+import '../services/user_service.dart';
+import '../services/auth_service.dart';
+
+class AddTransactionDialog extends StatefulWidget {
+  final String? preSelectedReceiverId;
+  final String? preSelectedReceiverName;
+  final VoidCallback? onSuccess;
+
+  const AddTransactionDialog({
+    super.key,
+    this.preSelectedReceiverId,
+    this.preSelectedReceiverName,
+    this.onSuccess,
+  });
+
+  @override
+  State<AddTransactionDialog> createState() => _AddTransactionDialogState();
+}
+
+class _AddTransactionDialogState extends State<AddTransactionDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _amountController = TextEditingController();
+  final _notesController = TextEditingController();
+  final _searchController = TextEditingController();
+  
+  String? _selectedReceiverId;
+  String? _selectedReceiverName;
+  String? _selectedReceiverDisplay;
+  String _selectedMode = 'Cash';
+  bool _isLoading = false;
+  bool _isLoadingUsers = true;
+  List<Map<String, dynamic>> _users = [];
+  List<Map<String, dynamic>> _filteredUsers = [];
+  String? _currentUserId;
+  bool _showUserList = false;
+  
+  final List<String> _modes = ['Cash', 'UPI', 'Bank'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentUserId();
+    _loadUsers();
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _notesController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    final userId = await AuthService.getUserId();
+    setState(() {
+      _currentUserId = userId;
+    });
+  }
+
+  Future<void> _loadUsers() async {
+    setState(() {
+      _isLoadingUsers = true;
+    });
+
+    try {
+      final result = await UserService.getUsers();
+      if (result['success'] == true && mounted) {
+        final users = result['users'] as List<dynamic>? ?? [];
+        // Filter for active users only (isVerified == true) and exclude current user
+        final filteredUsers = users.where((u) {
+          final userId = u['_id'] ?? u['id'] ?? '';
+          final isVerified = u['isVerified'] ?? false;
+          return userId != _currentUserId && isVerified == true;
+        }).toList();
+        
+        setState(() {
+          _users = filteredUsers.map((u) {
+            final name = _extractUserName(u);
+            final display = _composeDisplayLabel(u);
+            return {
+              'id': u['_id'] ?? u['id'] ?? '',
+              'name': name,
+              'display': display,
+              'email': u['email'] ?? '',
+              'role': u['role'] ?? '',
+              'isVerified': u['isVerified'] ?? false,
+            };
+          }).toList();
+          _filteredUsers = _users;
+          _isLoadingUsers = false;
+        });
+        
+        // Set pre-selected receiver if provided
+        if (widget.preSelectedReceiverId != null && widget.preSelectedReceiverId!.isNotEmpty) {
+          try {
+            final preSelectedUser = _users.firstWhere(
+              (u) => u['id'] == widget.preSelectedReceiverId,
+            );
+            if (mounted) {
+              setState(() {
+                _selectedReceiverId = preSelectedUser['id'];
+                _selectedReceiverName = preSelectedUser['name'];
+                _selectedReceiverDisplay = preSelectedUser['display'];
+                _searchController.text = preSelectedUser['display'] as String? ?? preSelectedUser['name'] as String;
+              });
+            }
+          } catch (e) {
+            // User not found in list, use provided name if available
+            if (widget.preSelectedReceiverName != null && mounted) {
+              setState(() {
+                _selectedReceiverId = widget.preSelectedReceiverId;
+                _selectedReceiverName = widget.preSelectedReceiverName;
+                _selectedReceiverDisplay = widget.preSelectedReceiverName;
+                _searchController.text = widget.preSelectedReceiverName!;
+              });
+            }
+          }
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isLoadingUsers = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingUsers = false;
+        });
+      }
+    }
+  }
+
+  String _extractUserName(dynamic rawUser) {
+    final Map<String, dynamic> user = rawUser is Map ? Map<String, dynamic>.from(rawUser as Map) : {};
+    for (final key in ['name', 'username', 'fullName', 'email']) {
+      final value = user[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString().trim();
+      }
+    }
+    return 'Unknown User';
+  }
+
+  String? _extractUserRole(dynamic rawUser) {
+    final Map<String, dynamic> user = rawUser is Map ? Map<String, dynamic>.from(rawUser as Map) : {};
+    for (final key in ['role', 'userRole', 'user_role', 'designation', 'department']) {
+      final value = user[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString().trim();
+      }
+    }
+    return null;
+  }
+
+  String _composeDisplayLabel(dynamic rawUser) {
+    final role = _extractUserRole(rawUser);
+    final name = _extractUserName(rawUser);
+    if (role != null && role.isNotEmpty) {
+      return '$role - $name';
+    }
+    return name;
+  }
+
+  void _filterUsers(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        _filteredUsers = _users;
+        _showUserList = false;
+      } else {
+        _filteredUsers = _users.where((user) {
+          final name = (user['name'] ?? '').toString().toLowerCase();
+          final email = (user['email'] ?? '').toString().toLowerCase();
+          final display = (user['display'] ?? '').toString().toLowerCase();
+          final searchQuery = query.toLowerCase();
+          return name.contains(searchQuery) || 
+                 email.contains(searchQuery) || 
+                 display.contains(searchQuery);
+        }).toList();
+        _showUserList = true;
+      }
+    });
+  }
+
+  void _selectUser(Map<String, dynamic> user) {
+    setState(() {
+      _selectedReceiverId = user['id'] as String;
+      _selectedReceiverName = user['name'] as String;
+      _selectedReceiverDisplay = user['display'] as String? ?? _selectedReceiverName;
+      _searchController.text = user['display'] as String? ?? user['name'] as String;
+      _showUserList = false;
+    });
+  }
+
+  Future<void> _handleTransaction() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    if (_currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to get current user. Please login again.'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedReceiverId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a receiver'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    if (_currentUserId == _selectedReceiverId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot transfer to yourself'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final amount = double.parse(_amountController.text);
+      final purpose = _notesController.text.trim();
+      
+      final result = await TransactionService.createTransaction(
+        sender: _currentUserId!,
+        receiver: _selectedReceiverId!,
+        amount: amount,
+        mode: _selectedMode,
+        purpose: purpose.isEmpty ? null : purpose,
+      );
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (result['success'] == true) {
+          Navigator.of(context).pop();
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message'] ?? '₹${_amountController.text} transferred to $_selectedReceiverName successfully'),
+              backgroundColor: AppTheme.secondaryColor,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+
+          widget.onSuccess?.call();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message'] ?? 'Failed to transfer amount'),
+              backgroundColor: AppTheme.errorColor,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = Responsive.isMobile(context);
+    final isTablet = Responsive.isTablet(context);
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Container(
+        width: isMobile ? double.infinity : (isTablet ? 600 : 700),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+          minHeight: 400,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: EdgeInsets.all(isMobile ? 16 : 20),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.swap_horiz,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Add Transaction',
+                        style: AppTheme.headingMedium.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    // User name (current user - Super Admin)
+                    FutureBuilder<String?>(
+                      future: AuthService.getUserName(),
+                      builder: (context, snapshot) {
+                        final userName = snapshot.data ?? 'Super Admin';
+                        return Row(
+                          children: [
+                            const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                userName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    // Close button
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                      tooltip: 'Close',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Form Content
+              Flexible(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _showUserList = false;
+                    });
+                  },
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(isMobile ? 16 : 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                      // Transfer To field
+                      Text('Transfer To', style: AppTheme.labelMedium),
+                      const SizedBox(height: 8),
+                      if (_isLoadingUsers)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      else
+                        Stack(
+                          children: [
+                            TextFormField(
+                              controller: _searchController,
+                              decoration: InputDecoration(
+                                hintText: 'Transfer To',
+                                prefixIcon: const Icon(Icons.person_outline),
+                                suffixIcon: const Icon(Icons.search),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: isMobile ? 16 : 14,
+                                ),
+                              ),
+                              style: TextStyle(
+                                fontSize: isMobile ? 16 : 15,
+                              ),
+                              onChanged: _filterUsers,
+                              onTap: () {
+                                if (_searchController.text.isEmpty) {
+                                  setState(() {
+                                    _filteredUsers = _users;
+                                    _showUserList = true;
+                                  });
+                                }
+                              },
+                              validator: (value) {
+                                if (_selectedReceiverId == null || _selectedReceiverId!.isEmpty) {
+                                  return 'Please select a receiver';
+                                }
+                                return null;
+                              },
+                            ),
+                            if (_showUserList && _filteredUsers.isNotEmpty)
+                              Positioned(
+                                top: 60,
+                                left: 0,
+                                right: 0,
+                                child: Container(
+                                  constraints: const BoxConstraints(maxHeight: 200),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppTheme.borderColor),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.1),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: _filteredUsers.length,
+                                    itemBuilder: (context, index) {
+                                      final user = _filteredUsers[index];
+                                      return ListTile(
+                                        leading: const Icon(Icons.person_outline),
+                                        title: Text(
+                                          (user['display'] ?? user['name'] ?? 'Unknown').toString(),
+                                        ),
+                                        onTap: () => _selectUser(user),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 20),
+
+                      // Amount field
+                      TextFormField(
+                        controller: _amountController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                        ],
+                        decoration: InputDecoration(
+                          labelText: 'Amount',
+                          hintText: 'Enter amount',
+                          prefixIcon: const Icon(Icons.currency_rupee),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: isMobile ? 16 : 14,
+                          ),
+                        ),
+                        style: TextStyle(
+                          fontSize: isMobile ? 16 : 15,
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter an amount';
+                          }
+                          final amount = double.tryParse(value);
+                          if (amount == null || amount <= 0) {
+                            return 'Please enter a valid amount';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Payment Mode
+                      Text('Payment Mode', style: AppTheme.labelMedium),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.borderColor),
+                        ),
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedMode,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 16,
+                            ),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                          ),
+                          icon: const Icon(Icons.keyboard_arrow_down),
+                          items: _modes.map((String mode) {
+                            return DropdownMenuItem<String>(
+                              value: mode,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    mode == 'Cash'
+                                        ? Icons.money
+                                        : mode == 'UPI'
+                                            ? Icons.qr_code
+                                            : Icons.account_balance,
+                                    color: AppTheme.primaryColor,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(mode),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            if (newValue != null) {
+                              setState(() {
+                                _selectedMode = newValue;
+                              });
+                            }
+                          },
+                          selectedItemBuilder: (BuildContext context) {
+                            return _modes.map((String mode) {
+                              return Container(
+                                alignment: Alignment.centerLeft,
+                                child: Row(
+                                  children: [
+                                    // First currency note icon (grey)
+                                    Icon(
+                                      Icons.money,
+                                      color: Colors.grey[600],
+                                      size: 24,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    // Second currency note icon (purple)
+                                    Icon(
+                                      Icons.money,
+                                      color: AppTheme.primaryColor,
+                                      size: 24,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      '$_selectedMode Mode',
+                                      style: TextStyle(
+                                        fontSize: isMobile ? 16 : 15,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList();
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Purpose/Notes field
+                      TextFormField(
+                        controller: _notesController,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: 'Purpose / Notes (Optional)',
+                          hintText: 'Add purpose or notes for this transfer...',
+                          prefixIcon: const Icon(Icons.note_outlined),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: isMobile ? 16 : 14,
+                          ),
+                        ),
+                        style: TextStyle(
+                          fontSize: isMobile ? 16 : 15,
+                        ),
+                      ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Action Buttons
+              Container(
+                padding: EdgeInsets.all(isMobile ? 16 : 20),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: AppTheme.borderColor),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: AppTheme.primaryColor,
+                          fontSize: isMobile ? 15 : 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _handleTransaction,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 24 : 32,
+                          vertical: isMobile ? 12 : 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : Text(
+                              'Submit',
+                              style: TextStyle(
+                                fontSize: isMobile ? 15 : 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approval Management</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"
+    />
+    <style>
+      :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --border: #dfe3eb;
+        --text-primary: #1f2937;
+        --text-secondary: #4b5563;
+        --muted: #9ca3af;
+        --shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+        --status-approve: #16a34a;
+        --status-unapprove: #f97316;
+        --status-verified: #2563eb;
+        --status-accountant: #8b5cf6;
+        --danger: #dc2626;
+        --warning: #d97706;
+        --neutral: #3b82f6;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 100%);
+        color: var(--text-primary);
+      }
+
+      header {
+        padding: 32px 5vw 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: clamp(28px, 3vw, 36px);
+        font-weight: 700;
+      }
+
+      header p {
+        margin: 0;
+        font-size: 16px;
+        color: var(--text-secondary);
+        max-width: 720px;
+      }
+
+      .filters {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+      }
+
+      .filter-pill {
+        background: rgba(37, 99, 235, 0.08);
+        color: #2563eb;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      main {
+        padding: 12px 5vw 48px;
+      }
+
+      .approval-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 20px;
+      }
+
+      .approval-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        position: relative;
+        transition: transform 160ms ease, box-shadow 160ms ease;
+      }
+
+      .approval-card:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
+      }
+
+      .approval-card.flagged::before {
+        content: "Flagged";
+        position: absolute;
+        top: 18px;
+        right: 22px;
+        background: rgba(220, 38, 38, 0.12);
+        color: var(--danger);
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+      }
+
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
+      .card-title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.2;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+
+      .status-badge span {
+        font-size: 18px;
+      }
+
+      .status-approve .status-badge {
+        background: rgba(22, 163, 74, 0.12);
+        color: var(--status-approve);
+      }
+
+      .status-unapprove .status-badge {
+        background: rgba(249, 115, 22, 0.12);
+        color: var(--status-unapprove);
+      }
+
+      .status-verified .status-badge {
+        background: rgba(37, 99, 235, 0.12);
+        color: var(--status-verified);
+      }
+
+      .status-accountant .status-badge {
+        background: rgba(139, 92, 246, 0.12);
+        color: var(--status-accountant);
+      }
+
+      .card-body {
+        display: grid;
+        gap: 14px;
+      }
+
+      .detail-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        color: var(--text-secondary);
+        font-size: 14px;
+      }
+
+      .detail-row strong {
+        color: var(--text-primary);
+        min-width: 120px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+
+      .history {
+        padding: 14px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(99, 102, 241, 0.08));
+        border: 1px solid rgba(37, 99, 235, 0.12);
+        color: var(--text-secondary);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .history strong {
+        display: inline-block;
+        margin-bottom: 6px;
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      .card-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 14px;
+        border-radius: 12px;
+        border: 1px solid transparent;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        background: rgba(148, 163, 184, 0.12);
+        color: #1f2937;
+        transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
+      }
+
+      .action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+      }
+
+      .action-btn span {
+        font-size: 18px;
+      }
+
+      .action-primary {
+        background: rgba(22, 163, 74, 0.12);
+        color: var(--status-approve);
+        border-color: rgba(22, 163, 74, 0.2);
+      }
+
+      .action-warning {
+        background: rgba(249, 115, 22, 0.12);
+        color: var(--status-unapprove);
+        border-color: rgba(249, 115, 22, 0.24);
+      }
+
+      .action-info {
+        background: rgba(37, 99, 235, 0.1);
+        color: var(--status-verified);
+        border-color: rgba(37, 99, 235, 0.2);
+      }
+
+      .action-danger {
+        background: rgba(220, 38, 38, 0.12);
+        color: var(--danger);
+        border-color: rgba(220, 38, 38, 0.2);
+      }
+
+      .action-neutral {
+        background: rgba(79, 70, 229, 0.1);
+        color: #4c1d95;
+        border-color: rgba(79, 70, 229, 0.24);
+      }
+
+      @media (max-width: 600px) {
+        header,
+        main {
+          padding-left: 20px;
+          padding-right: 20px;
+        }
+
+        .approval-card {
+          padding: 18px;
+        }
+
+        .detail-row {
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .detail-row strong {
+          min-width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Approval Management</h1>
+      <p>
+        Monitor and manage approval workflows across teams. Status-aware action sets keep the right
+        tools at your fingertips while confirmations guard against destructive steps.
+      </p>
+      <div class="filters">
+        <span class="filter-pill"><span class="material-symbols-outlined">bolt</span> Real-time transitions</span>
+        <span class="filter-pill"><span class="material-symbols-outlined">shield_lock</span> Stakeholder safe</span>
+        <span class="filter-pill"><span class="material-symbols-outlined">tune</span> Context aware</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="approval-grid" id="approvalGrid"></section>
+    </main>
+
+    <script>
+      const STATUS_CONFIG = {
+        approve: {
+          label: "Approve",
+          icon: "task_alt",
+          className: "status-approve",
+          actions: ["unapprove", "edit", "flag", "delete"],
+        },
+        unapprove: {
+          label: "Unapprove",
+          icon: "error",
+          className: "status-unapprove",
+          actions: ["approve", "reject", "edit", "flag", "delete"],
+        },
+        verified: {
+          label: "Verified",
+          icon: "verified",
+          className: "status-verified",
+          actions: ["approve", "reject", "edit", "flag", "delete"],
+        },
+        accountant: {
+          label: "Accountant",
+          icon: "account_balance",
+          className: "status-accountant",
+          actions: ["approve", "reject", "edit", "flag"],
+        },
+      };
+
+      const ACTION_CONFIG = {
+        approve: {
+          label: "Approve",
+          icon: "task_alt",
+          tone: "action-primary",
+          handler: (item) => updateStatus(item, "approve"),
+        },
+        unapprove: {
+          label: "Unapprove",
+          icon: "undo",
+          tone: "action-warning",
+          handler: (item) => updateStatus(item, "unapprove"),
+        },
+        reject: {
+          label: "Reject",
+          icon: "thumb_down",
+          tone: "action-danger",
+          confirmMessage: "Reject this item? This will move it back to Unapproved.",
+          handler: (item) => {
+            const reason = prompt("Enter a rejection note (optional):", item.rejectionNote || "");
+            if (reason !== null) {
+              item.rejectionNote = reason.trim();
+              updateStatus(item, "unapprove");
+            }
+          },
+        },
+        edit: {
+          label: "Edit",
+          icon: "edit",
+          tone: "action-neutral",
+          handler: (item) => {
+            const revised = prompt(
+              "Update summary for this item:",
+              item.summary || "General ledger adjustment"
+            );
+            if (typeof revised === "string") {
+              item.summary = revised.trim() || item.summary;
+              flashMessage(`Item #${item.id} updated.`);
+              renderItems();
+            }
+          },
+        },
+        flag: {
+          label: (item) => (item.flagged ? "Unflag" : "Flag"),
+          icon: (item) => (item.flagged ? "flag_circle" : "outlined_flag"),
+          tone: "action-warning",
+          confirmMessage: (item) =>
+            item.flagged ? "Remove flag from this item?" : "Flag this item for follow-up?",
+          handler: (item) => {
+            item.flagged = !item.flagged;
+            flashMessage(`Item #${item.id} ${item.flagged ? "flagged" : "unflagged"}.`);
+            renderItems();
+          },
+        },
+        delete: {
+          label: "Delete",
+          icon: "delete",
+          tone: "action-danger",
+          confirmMessage: "Delete this item? This cannot be undone without re-entry.",
+          handler: (item) => {
+            const index = items.findIndex((entry) => entry.id === item.id);
+            if (index >= 0) {
+              items.splice(index, 1);
+              flashMessage(`Item #${item.id} deleted.`);
+              renderItems();
+            }
+          },
+        },
+      };
+
+      const items = [
+        {
+          id: 4125,
+          title: "Marketing Campaign Spend",
+          amount: "₹245,500",
+          submittedBy: "Priya Sharma",
+          submittedOn: "2025-11-02",
+          department: "Marketing",
+          summary: "Budget allocation for regional Diwali campaign rollout.",
+          status: "approve",
+          flagged: false,
+          history: [
+            "Submitted • 02 Nov 2025",
+            "Reviewed by Finance • 03 Nov 2025",
+            "Approved by Super Admin • 04 Nov 2025",
+          ],
+        },
+        {
+          id: 4126,
+          title: "Fleet Maintenance",
+          amount: "₹119,200",
+          submittedBy: "Anil Kumar",
+          submittedOn: "2025-11-01",
+          department: "Operations",
+          summary: "Urgent service schedule for the northern fleet vehicles.",
+          status: "unapprove",
+          flagged: true,
+          history: [
+            "Submitted • 01 Nov 2025",
+            "Flagged by Accountant • 02 Nov 2025",
+            "Awaiting documentation • 03 Nov 2025",
+          ],
+        },
+        {
+          id: 4127,
+          title: "Branch Audit Reconciliation",
+          amount: "₹68,340",
+          submittedBy: "Tara Iyer",
+          submittedOn: "2025-10-29",
+          department: "Compliance",
+          summary: "Variance reconciliation for the Q3 audit cycle.",
+          status: "verified",
+          flagged: false,
+          history: [
+            "Submitted • 29 Oct 2025",
+            "Accountant review • 30 Oct 2025",
+            "Verified • 31 Oct 2025",
+          ],
+        },
+        {
+          id: 4128,
+          title: "Vendor Payment Batch",
+          amount: "₹512,780",
+          submittedBy: "Rahul Desai",
+          submittedOn: "2025-10-30",
+          department: "Finance",
+          summary: "Pending payout batch for monthly vendor retainers.",
+          status: "accountant",
+          flagged: false,
+          history: [
+            "Submitted • 30 Oct 2025",
+            "Auto-routed to Accountant • 30 Oct 2025",
+            "Supporting docs uploaded • 31 Oct 2025",
+          ],
+        },
+      ];
+
+      const grid = document.getElementById("approvalGrid");
+
+      function renderItems() {
+        grid.innerHTML = "";
+        items.forEach((item) => {
+          const config = STATUS_CONFIG[item.status];
+          if (!config) return;
+
+          const card = document.createElement("article");
+          card.className = `approval-card ${config.className} ${item.flagged ? "flagged" : ""}`;
+          card.dataset.itemId = item.id;
+
+          card.innerHTML = `
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">${item.title}</h2>
+                <div class="status-badge">
+                  <span class="material-symbols-outlined">${config.icon}</span>
+                  ${config.label}
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="detail-row"><strong>Amount</strong><span>${item.amount}</span></div>
+              <div class="detail-row"><strong>Department</strong><span>${item.department}</span></div>
+              <div class="detail-row"><strong>Submitted By</strong><span>${item.submittedBy}</span></div>
+              <div class="detail-row"><strong>Submitted On</strong><span>${formatDate(item.submittedOn)}</span></div>
+              <div class="detail-row"><strong>Summary</strong><span>${item.summary}</span></div>
+              ${item.rejectionNote ? `<div class="detail-row"><strong>Rejection Note</strong><span>${item.rejectionNote}</span></div>` : ""}
+              <div class="history">
+                <strong>History</strong><br />${item.history.map((entry) => `• ${entry}`).join("<br />")}
+              </div>
+            </div>
+            <footer class="card-actions"></footer>
+          `;
+
+          const actionBar = card.querySelector(".card-actions");
+          config.actions.forEach((actionKey) => {
+            const action = ACTION_CONFIG[actionKey];
+            if (!action) return;
+
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `action-btn ${action.tone || ""}`;
+            button.dataset.action = actionKey;
+            button.dataset.itemId = String(item.id);
+
+            const label = typeof action.label === "function" ? action.label(item) : action.label;
+            const icon = typeof action.icon === "function" ? action.icon(item) : action.icon;
+
+            button.innerHTML = `
+              <span class="material-symbols-outlined">${icon}</span>
+              <span>${label}</span>
+            `;
+            actionBar.appendChild(button);
+          });
+
+          grid.appendChild(card);
+        });
+      }
+
+      function updateStatus(item, nextStatus) {
+        if (!STATUS_CONFIG[nextStatus]) return;
+        if (item.status === nextStatus) {
+          flashMessage(`Item #${item.id} already in ${STATUS_CONFIG[nextStatus].label} status.`);
+          return;
+        }
+        const currentLabel = STATUS_CONFIG[item.status]?.label || item.status;
+        const nextLabel = STATUS_CONFIG[nextStatus].label;
+        item.history.unshift(`Status changed from ${currentLabel} to ${nextLabel} • ${formatDate(new Date())}`);
+        item.status = nextStatus;
+        if (nextStatus === "approve") {
+          item.flagged = false;
+        }
+        flashMessage(`Item #${item.id} moved to ${nextLabel}.`);
+        renderItems();
+      }
+
+      grid.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+
+        const itemId = Number(button.dataset.itemId);
+        const actionKey = button.dataset.action;
+        const item = items.find((entry) => entry.id === itemId);
+        const action = ACTION_CONFIG[actionKey];
+
+        if (!item || !action) return;
+
+        const confirmMessage =
+          typeof action.confirmMessage === "function"
+            ? action.confirmMessage(item)
+            : action.confirmMessage;
+
+        if (confirmMessage && !window.confirm(confirmMessage)) {
+          return;
+        }
+
+        action.handler(item);
+      });
+
+      function formatDate(input) {
+        const date = input instanceof Date ? input : new Date(input);
+        if (Number.isNaN(date.getTime())) {
+          return input;
+        }
+        return date.toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+        });
+      }
+
+      let flashTimeout;
+      function flashMessage(message) {
+        clearTimeout(flashTimeout);
+        let toast = document.querySelector(".toast");
+        if (!toast) {
+          toast = document.createElement("div");
+          toast.className = "toast";
+          document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.style.opacity = "1";
+        flashTimeout = setTimeout(() => {
+          toast.style.opacity = "0";
+        }, 2200);
+      }
+
+      renderItems();
+
+      const toastStyle = document.createElement("style");
+      toastStyle.textContent = `
+        .toast {
+          position: fixed;
+          bottom: 36px;
+          right: 36px;
+          padding: 14px 18px;
+          border-radius: 12px;
+          background: rgba(15, 23, 42, 0.92);
+          color: #f8fafc;
+          font-weight: 600;
+          letter-spacing: 0.2px;
+          box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
+          transition: opacity 180ms ease;
+          opacity: 0;
+          pointer-events: none;
+          z-index: 999;
+        }
+
+        @media (max-width: 640px) {
+          .toast {
+            left: 16px;
+            right: 16px;
+            bottom: 24px;
+            text-align: center;
+          }
+        }
+      `;
+      document.head.appendChild(toastStyle);
+    </script>
+  </body>
+</html>
+
