@@ -9,6 +9,7 @@ class AuthService {
   static const String _userNameKey = 'user_name';
   static const String _userEmailKey = 'user_email';
   static const String _userPermissionsKey = 'user_permissions';
+  static const String _isNonWalletUserKey = 'is_non_wallet_user';
 
   /// Authenticate user with email and password
   static Future<Map<String, dynamic>> login(String email, String password) async {
@@ -51,6 +52,10 @@ class AuthService {
         await prefs.setString(_userIdKey, user['_id'] ?? user['id'] ?? '');
         await prefs.setString(_userNameKey, user['name'] ?? '');
         await prefs.setString(_userEmailKey, user['email'] ?? email);
+        
+        // Store isNonWalletUser flag
+        final isNonWalletUser = user['isNonWalletUser'] ?? false;
+        await prefs.setBool(_isNonWalletUserKey, isNonWalletUser == true);
         
         // Store user permissions
         final permissions = user['permissions'] as List<dynamic>? ?? [];
@@ -136,6 +141,7 @@ class AuthService {
       await prefs.remove(_userNameKey);
       await prefs.remove(_userEmailKey);
       await prefs.remove(_userPermissionsKey);
+      await prefs.remove(_isNonWalletUserKey);
 
       // Disconnect Socket.IO if connected
       try {
@@ -157,6 +163,8 @@ class AuthService {
       await prefs.remove(_userIdKey);
       await prefs.remove(_userNameKey);
       await prefs.remove(_userEmailKey);
+      await prefs.remove(_userPermissionsKey);
+      await prefs.remove(_isNonWalletUserKey);
 
       return {
         'success': false,
@@ -263,6 +271,16 @@ class AuthService {
       return prefs.getString(_userEmailKey);
     } catch (e) {
       return null;
+    }
+  }
+
+  /// Get isNonWalletUser flag
+  static Future<bool> isNonWalletUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_isNonWalletUserKey) ?? false;
+    } catch (e) {
+      return false;
     }
   }
 
@@ -461,6 +479,7 @@ class AuthService {
 
   /// Create new user (Admin/SuperAdmin only)
   /// [userSpecificPermissions] is optional - can be provided during creation or assigned later
+  /// [skipWallet] if true, user will be created without a wallet
   static Future<Map<String, dynamic>> createUser(
     String name,
     String email,
@@ -473,6 +492,7 @@ class AuthService {
     String? address,
     String? state,
     String? pinCode,
+    bool skipWallet = false,
   }) async {
     try {
       // Map frontend roles to backend roles
@@ -524,6 +544,11 @@ class AuthService {
       // Include permissions if provided
       if (userSpecificPermissions != null && userSpecificPermissions.isNotEmpty) {
         requestBody['userSpecificPermissions'] = userSpecificPermissions;
+      }
+
+      // Include skipWallet flag if true
+      if (skipWallet) {
+        requestBody['skipWallet'] = true;
       }
 
       final response = await ApiService.post(

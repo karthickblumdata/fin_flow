@@ -16,6 +16,18 @@ class UIPermissionChecker {
       return true; // Super Admin always has access to everything
     }
     
+    // For dashboard and wallet screens, check if user is non-wallet user
+    // Non-wallet users cannot access dashboard or wallet screens
+    if (screenKey == 'dashboard' || screenKey == 'wallet' || screenKey == 'wallet_self') {
+      final isNonWallet = await AuthService.isNonWalletUser();
+      if (isNonWallet) {
+        if (screenKey == 'dashboard') {
+          print('🚫 [DASHBOARD ACCESS] Non-wallet user cannot access dashboard');
+        }
+        return false; // Non-wallet users cannot access dashboard/wallet
+      }
+    }
+    
     // Get user permissions
     final permissions = await AuthService.getUserPermissions();
     
@@ -325,6 +337,7 @@ class UIPermissionChecker {
       'accountReports': 'accounts.view',
       'expenseType': 'expenses.type.view',
       'expenseReport': 'expenses.report.view',
+      'settings': 'settings.collection_custom_field.view',
     };
     
     final requiredPermission = menuPermissionMap[menuKey];
@@ -361,14 +374,34 @@ class UIPermissionChecker {
       return hasAccess;
     }
     
-    // For walletSelf, check if user has any wallet.self permission (not just view)
-    // This allows users with create/edit/delete permissions to see the menu
+    // For walletSelf, STRICT CHECK: Only check wallet.self.view or parent wallet.self
+    // Do NOT check child permissions like wallet.self.transaction.view
+    // If wallet.self.view or wallet.self is checked → Show My Wallet screen
+    // If NOT checked → Hide My Wallet screen
     if (menuKey == 'walletSelf') {
-      return permissions.any((p) => 
+      final hasAccess = permissions.any((p) => 
         p == 'wallet.self.view' ||
-        p == 'wallet.self' ||
-        p.startsWith('wallet.self.')
+        p == 'wallet.self'
       );
+      
+      // Debug logging for walletSelf permission check
+      if (!hasAccess) {
+        print('\n🔍 ===== MY WALLET PERMISSION CHECK =====');
+        print('   Menu Key: $menuKey');
+        print('   User Role: $userRole');
+        print('   Required Permission: wallet.self.view or wallet.self');
+        print('   User Permissions Count: ${permissions.length}');
+        print('   Final Access: ❌ NO (wallet.self.view or wallet.self not found)');
+        print('==========================================\n');
+      } else {
+        print('\n✅ ===== MY WALLET PERMISSION CHECK =====');
+        print('   Menu Key: $menuKey');
+        print('   User Role: $userRole');
+        print('   Final Access: ✅ YES (wallet.self.view or wallet.self found)');
+        print('==========================================\n');
+      }
+      
+      return hasAccess;
     }
     
     // For accountReports, check if user has parent permission OR any child permission
@@ -457,48 +490,31 @@ class UIPermissionChecker {
       ) || _hasPermission(permissions, requiredPermission);
     }
     
-    // For walletOverview, check if user has ANY wallet.report OR wallet.all permission
-    // This allows access if user has:
-    // 1. wallet.report.view OR any wallet.report.* action permission
-    // 2. wallet.all.view OR any wallet.all.* permission (for backward compatibility)
-    // (e.g., wallet.report.transaction.approve, wallet.all.transaction.approve, etc.)
+    // For walletOverview, STRICT CHECK: Only check wallet.report.view or parent wallet.report
+    // Do NOT check child permissions like wallet.report.transaction.view
+    // Do NOT check wallet.all.* permissions
+    // If wallet.report.view or wallet.report is checked → Show All Wallet Report screen
+    // If NOT checked → Hide All Wallet Report screen
     if (menuKey == 'walletOverview') {
-      final hasAnyWalletReportPermission = permissions.any((p) => 
+      final hasAccess = permissions.any((p) => 
         p == 'wallet.report.view' ||
-        p == 'wallet.report' ||
-        p.startsWith('wallet.report.')
+        p == 'wallet.report'
       );
-      
-      // Also check for wallet.all.* permissions (for backward compatibility)
-      // Users with wallet.all.* permissions should also have access to All Wallet Report
-      final hasAnyWalletAllPermission = permissions.any((p) => 
-        p == 'wallet.all.view' ||
-        p == 'wallet.all' ||
-        p.startsWith('wallet.all.')
-      );
-      
-      final hasParentPermission = _hasPermission(permissions, requiredPermission);
-      final hasAccess = hasAnyWalletReportPermission || hasAnyWalletAllPermission || hasParentPermission;
       
       // Debug logging for walletOverview permission check
       if (!hasAccess) {
         print('\n🔍 ===== ALL WALLET REPORT PERMISSION CHECK =====');
         print('   Menu Key: $menuKey');
         print('   User Role: $userRole');
-        print('   Required Permission: $requiredPermission');
+        print('   Required Permission: wallet.report.view or wallet.report');
         print('   User Permissions Count: ${permissions.length}');
-        print('   Has Any Wallet Report Permission: $hasAnyWalletReportPermission');
-        print('   Has Any Wallet All Permission: $hasAnyWalletAllPermission');
-        print('   Has Parent Permission: $hasParentPermission');
-        print('   Final Access: ❌ NO');
+        print('   Final Access: ❌ NO (wallet.report.view or wallet.report not found)');
         print('==============================================\n');
       } else {
         print('\n✅ ===== ALL WALLET REPORT PERMISSION CHECK =====');
         print('   Menu Key: $menuKey');
         print('   User Role: $userRole');
-        print('   Has Wallet Report Permission: $hasAnyWalletReportPermission');
-        print('   Has Wallet All Permission: $hasAnyWalletAllPermission');
-        print('   Final Access: ✅ YES');
+        print('   Final Access: ✅ YES (wallet.report.view or wallet.report found)');
         print('==============================================\n');
       }
       
@@ -592,6 +608,26 @@ class UIPermissionChecker {
       p == 'expenses.type.view' || 
       p == 'expenses.report.view' ||
       p.startsWith('expenses.')
+    );
+  }
+  
+  /// Check if user can view Settings menu (parent menu)
+  /// Returns true if user has any settings permission
+  static Future<bool> canViewSettingsMenu() async {
+    final userRole = await AuthService.getUserRole();
+    if (userRole == 'SuperAdmin' || userRole == 'Super Admin') {
+      return true;
+    }
+    
+    final permissions = await AuthService.getUserPermissions();
+    if (permissions.contains('*')) {
+      return true;
+    }
+    
+    return permissions.any((p) => 
+      p == 'settings.collection_custom_field.view' || 
+      p == 'settings.collection_custom_field' ||
+      p.startsWith('settings.')
     );
   }
   

@@ -11,6 +11,7 @@ import '../../widgets/add_amount_dialog.dart';
 import '../../widgets/add_collection_dialog.dart';
 import '../../widgets/add_expense_dialog.dart';
 import '../../widgets/add_transaction_dialog.dart';
+import '../../services/auth_service.dart';
 
 const double _walletCardMobileWidth = 260;
 const double _walletCardTabletWidth = 272;
@@ -39,6 +40,8 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
   bool _isDrawerOpen = false;
   final TextEditingController _searchController = TextEditingController();
   WalletStatusFilter _statusFilter = WalletStatusFilter.active;
+  bool _isNonWalletUser = false; // Track if current user is non-wallet user
+  bool _isCheckingWallet = true; // Track if wallet check is in progress
   
   // Auto-refresh configuration
   Timer? _autoRefreshTimer;
@@ -51,12 +54,38 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
     super.initState();
     _searchController.addListener(_filterWallets);
     _loadWallets();
+    _checkCurrentUserWallet();
     
     // Initialize socket for real-time updates
     _initializeSocketListeners();
     
     // Start auto-refresh timer
     _startAutoRefresh();
+  }
+
+  Future<void> _checkCurrentUserWallet() async {
+    try {
+      setState(() {
+        _isCheckingWallet = true;
+      });
+      
+      final isNonWallet = await AuthService.isNonWalletUser();
+      
+      if (mounted) {
+        setState(() {
+          _isNonWalletUser = isNonWallet;
+          _isCheckingWallet = false;
+        });
+      }
+    } catch (e) {
+      print('Error checking non-wallet user flag: $e');
+      if (mounted) {
+        setState(() {
+          _isNonWalletUser = false;
+          _isCheckingWallet = false;
+        });
+      }
+    }
   }
 
   @override
@@ -636,25 +665,36 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
           
           // Navigation Items
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              children: [
-                _buildDrawerItem(
-                  icon: Icons.dashboard_outlined,
-                  title: 'Dashboard',
-                  onTap: () {
-                    setState(() => _isDrawerOpen = false);
-                    context.go('/dashboard');
-                  },
-                ),
-                _buildDrawerItem(
-                  icon: Icons.account_balance_wallet_outlined,
-                  title: 'My Wallet',
-                  onTap: () {
-                    setState(() => _isDrawerOpen = false);
-                    context.push('/wallet');
-                  },
-                ),
+            child: _isCheckingWallet
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    children: [
+                      // Only show Dashboard if user is NOT non-wallet user
+                      if (!_isNonWalletUser)
+                        _buildDrawerItem(
+                          icon: Icons.dashboard_outlined,
+                          title: 'Dashboard',
+                          onTap: () {
+                            setState(() => _isDrawerOpen = false);
+                            context.go('/dashboard');
+                          },
+                        ),
+                      // Only show My Wallet if user is NOT non-wallet user
+                      if (!_isNonWalletUser)
+                        _buildDrawerItem(
+                          icon: Icons.account_balance_wallet_outlined,
+                          title: 'My Wallet',
+                          onTap: () {
+                            setState(() => _isDrawerOpen = false);
+                            context.push('/wallet');
+                          },
+                        ),
                 _buildDrawerItem(
                   icon: Icons.payment_outlined,
                   title: 'Collections',

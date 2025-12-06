@@ -19,6 +19,7 @@ import '../screens/common/collections_screen.dart';
 import '../screens/common/pending_approvals_screen.dart';
 import '../screens/super_admin/super_admin_settings_screen.dart';
 import '../constants/nav_item.dart';
+import '../services/auth_service.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/login',
@@ -61,6 +62,14 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/dashboard',
       name: 'dashboard',
+      redirect: (context, state) async {
+        // Block non-wallet users from accessing dashboard
+        final isNonWallet = await AuthService.isNonWalletUser();
+        if (isNonWallet) {
+          return '/wallet/all'; // Redirect to All User Wallets
+        }
+        return null; // Allow access
+      },
       builder: (context, state) => SuperAdminDashboard(
         initialSelectedItem: NavItem.dashboard,
       ),
@@ -68,6 +77,14 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/wallet/self',
       name: 'wallet-self',
+      redirect: (context, state) async {
+        // Block non-wallet users from accessing My Wallet
+        final isNonWallet = await AuthService.isNonWalletUser();
+        if (isNonWallet) {
+          return '/wallet/all'; // Redirect to All User Wallets
+        }
+        return null; // Allow access
+      },
       builder: (context, state) => SuperAdminDashboard(
         initialSelectedItem: NavItem.walletSelf,
       ),
@@ -172,6 +189,13 @@ final GoRouter appRouter = GoRouter(
         initialSelectedItem: NavItem.smartApprovals,
       ),
     ),
+    GoRoute(
+      path: '/settings/collection-custom-field',
+      name: 'collection-custom-field',
+      builder: (context, state) => SuperAdminDashboard(
+        initialSelectedItem: NavItem.collectionCustomField,
+      ),
+    ),
 
     // Legacy route for backward compatibility
     GoRoute(
@@ -189,6 +213,14 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/wallet',
       name: 'wallet',
+      redirect: (context, state) async {
+        // Block non-wallet users from accessing My Wallet screen
+        final isNonWallet = await AuthService.isNonWalletUser();
+        if (isNonWallet) {
+          return '/wallet/all'; // Redirect to All User Wallets
+        }
+        return null; // Allow access
+      },
       builder: (context, state) => const WalletScreen(),
     ),
     GoRoute(

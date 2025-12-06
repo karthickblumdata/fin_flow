@@ -8,11 +8,13 @@ import 'package:intl/intl.dart';
 import '../services/auth_service.dart';
 import '../services/role_service.dart';
 import '../services/api_service.dart';
+import '../services/pincode_service.dart';
 import '../utils/api_constants.dart';
 import '../theme/app_theme.dart';
 import '../utils/profile_image_helper.dart';
 import 'user_permissions_dialog.dart';
 import 'role_selector_field.dart';
+import 'dart:async';
 
 class AddUserDialog extends StatefulWidget {
   const AddUserDialog({
@@ -53,6 +55,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
   List<String> _availableRoles = [];
   bool _isLoadingRoles = false;
   late bool _isActive;
+  bool _isNonWalletUser = false;
   bool _emailHasInput = false;
   bool _emailIsValid = false;
   DateTime? _selectedDateOfBirth;
@@ -62,6 +65,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
   String? _imageUrl;
   bool _isSubmitting = false;
   String? _userName;
+  bool _isLoadingState = false;
+  Timer? _pincodeDebounceTimer;
 
   Map<String, dynamic> get _initialValues =>
       Map<String, dynamic>.from(widget.initialValues ?? {});
@@ -140,6 +145,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
     );
     _pinCodeFieldKey = pinCodeResolution.key;
     _pinCodeController = TextEditingController(text: pinCodeResolution.value);
+    // Add listener to PINCODE field to auto-load state
+    _pinCodeController.addListener(_handlePincodeChanged);
 
     final resolvedRole = _readString(initial['role']).trim();
     _selectedRole = resolvedRole.isNotEmpty ? resolvedRole : null;
@@ -221,8 +228,63 @@ class _AddUserDialogState extends State<AddUserDialog> {
   }
 
 
+  void _handlePincodeChanged() {
+    // Cancel previous timer
+    _pincodeDebounceTimer?.cancel();
+    
+    final pincode = _pinCodeController.text.trim();
+    
+    // Only fetch if pincode is exactly 6 digits
+    if (pincode.length == 6) {
+      // Debounce: Wait 500ms after user stops typing
+      _pincodeDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+        _fetchStateFromPincode(pincode);
+      });
+    } else {
+      // Clear state if pincode is not 6 digits
+      if (mounted && _stateController.text.isNotEmpty) {
+        // Don't clear if user manually entered state
+        // Only clear if state was auto-filled
+      }
+    }
+  }
+
+  Future<void> _fetchStateFromPincode(String pincode) async {
+    if (pincode.length != 6) return;
+    
+    setState(() {
+      _isLoadingState = true;
+    });
+
+    try {
+      final result = await PincodeService.getStateFromPincode(pincode);
+      
+      if (!mounted) return;
+      
+      if (result['success'] == true) {
+        final state = result['state']?.toString() ?? '';
+        if (state.isNotEmpty) {
+          _stateController.text = state;
+        }
+      } else {
+        // Don't show error, just silently fail
+        // User can manually enter state
+      }
+    } catch (e) {
+      // Silently handle error
+      print('Error fetching state from pincode: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingState = false;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _pincodeDebounceTimer?.cancel();
     _nameController.dispose();
     _emailController.removeListener(_handleEmailChanged);
     _emailController.dispose();
@@ -232,6 +294,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
     _addressController.dispose();
     _addressLine2Controller.dispose();
     _stateController.dispose();
+    _pinCodeController.removeListener(_handlePincodeChanged);
     _pinCodeController.dispose();
     _roleController.dispose();
     super.dispose();
@@ -501,9 +564,21 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                             FilteringTextInputFormatter.digitsOnly,
                                             LengthLimitingTextInputFormatter(6),
                                           ],
-                                          decoration: const InputDecoration(
+                                          decoration: InputDecoration(
                                             labelText: 'PIN Code',
                                             hintText: 'Enter PIN code',
+                                            suffixIcon: _isLoadingState
+                                                ? const Padding(
+                                                    padding: EdgeInsets.all(12.0),
+                                                    child: SizedBox(
+                                                      width: 20,
+                                                      height: 20,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                    ),
+                                                  )
+                                                : null,
                                           ),
                                         );
 
@@ -511,9 +586,12 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                           controller: _stateController,
                                           enabled: !_isSubmitting,
                                           textInputAction: TextInputAction.next,
-                                          decoration: const InputDecoration(
+                                          decoration: InputDecoration(
                                             labelText: 'State',
-                                            hintText: 'Enter state',
+                                            hintText: _isLoadingState ? 'Loading...' : 'Enter state',
+                                            helperText: _pinCodeController.text.length == 6
+                                                ? 'State will be auto-filled from PIN code'
+                                                : null,
                                           ),
                                         );
 
@@ -526,14 +604,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                           ],
                                         );
 
-                                        final Widget statePinGroup = Column(
-                                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                                          children: [
-                                            stateField,
-                                            SizedBox(height: isMobileLayout ? 12 : 16),
-                                            pinCodeField,
-                                          ],
-                                        );
+                                        // State moved to left column, PIN Code stays in right sidebar for desktop
 
                                         final Widget leftColumn = Column(
                                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -546,10 +617,12 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                             SizedBox(height: isMobileLayout ? 16 : 24),
                                             addressGroup,
                                             SizedBox(height: isMobileLayout ? 12 : 16),
+                                            stateField,
+                                            SizedBox(height: isMobileLayout ? 12 : 16),
                                           ],
                                         );
 
-                                        // Desktop avatar panel (with State and PIN Code)
+                                        // Desktop avatar panel (with PIN Code only)
                                         final Widget avatarPanelDesktop = Column(
                                           crossAxisAlignment: CrossAxisAlignment.stretch,
                                           children: [
@@ -561,8 +634,10 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                             roleField,
                                             SizedBox(height: isMobileLayout ? 16 : 24),
                                             _buildStatusSelector(context),
+                                            SizedBox(height: isMobileLayout ? 16 : 24),
+                                            _buildNonWalletUserToggle(context),
                                             SizedBox(height: isMobileLayout ? 20 : 32),
-                                            statePinGroup,
+                                            pinCodeField,
                                           ],
                                         );
 
@@ -578,6 +653,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                             roleField,
                                             SizedBox(height: isMobileLayout ? 16 : 24),
                                             _buildStatusSelector(context),
+                                            SizedBox(height: isMobileLayout ? 12 : 16),
+                                            _buildNonWalletUserToggle(context),
                                           ],
                                         );
 
@@ -626,7 +703,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                             SizedBox(height: isMobileLayout ? 12 : 16),
                                             formPanel,
                                             SizedBox(height: isMobileLayout ? 12 : 16),
-                                            statePinGroup,
+                                            pinCodeField,
                                           ],
                                         );
                                       },
@@ -1142,6 +1219,12 @@ class _AddUserDialogState extends State<AddUserDialog> {
   }
 
   Future<void> _handleCreateAndSendInvite() async {
+    // If Non Wallet User toggle is ON, use the non-wallet user handler
+    if (_isNonWalletUser) {
+      await _handleCreateNonWalletUser();
+      return;
+    }
+    
     if (_isSubmitting) return;
     final currentState = _formKey.currentState;
     if (currentState != null && !currentState.validate()) {
@@ -1367,6 +1450,230 @@ class _AddUserDialogState extends State<AddUserDialog> {
     }
   }
 
+  Future<void> _handleCreateNonWalletUser() async {
+    if (_isSubmitting) return;
+    final currentState = _formKey.currentState;
+    if (currentState != null && !currentState.validate()) {
+      return;
+    }
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final roleName = _selectedRole ?? _roleController.text.trim();
+      
+      if (roleName.isEmpty) {
+        setState(() {
+          _isSubmitting = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Please select a role.'),
+            backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+      
+      // Step 1: Verify role exists (must be created in Roles screen first)
+      final roleExists = await RoleService.roleExists(roleName);
+      
+      if (!roleExists) {
+        setState(() {
+          _isSubmitting = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Role "$roleName" does not exist. Please create it in the Roles screen first.'),
+            backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+      
+      // Step 2: Upload image if provided
+      String? profileImageUrl;
+      if (_imageBytes != null) {
+        try {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Row(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text('Uploading profile image...'),
+                    ),
+                  ],
+                ),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+          
+          final uploadResult = await ApiService.uploadFile(
+            ApiConstants.uploadUserProfileImage,
+            '',
+            'image',
+            fileBytes: _imageBytes,
+            fileName: 'profile-image.jpg',
+          );
+          
+          if (uploadResult['success'] == true && uploadResult['imageUrl'] != null) {
+            profileImageUrl = uploadResult['imageUrl'] as String;
+          } else {
+            print('⚠️  Image upload failed: ${uploadResult['message']}');
+          }
+        } catch (e) {
+          print('⚠️  Error uploading image: $e');
+        }
+      }
+      
+      // Step 3: Format date of birth as ISO string (YYYY-MM-DD)
+      String? formattedDateOfBirth;
+      if (_selectedDateOfBirth != null) {
+        formattedDateOfBirth = _selectedDateOfBirth!.toIso8601String().split('T')[0];
+      } else if (_dateOfBirthController.text.trim().isNotEmpty) {
+        try {
+          final parsedDate = _dateFormat.parse(_dateOfBirthController.text.trim());
+          formattedDateOfBirth = parsedDate.toIso8601String().split('T')[0];
+        } catch (e) {
+          setState(() {
+            _isSubmitting = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Please enter a valid date of birth.'),
+              backgroundColor: AppTheme.errorColor,
+            ),
+          );
+          return;
+        }
+      }
+      
+      // Step 4: Proceed with user creation (without wallet)
+      final result = await AuthService.createUser(
+        _nameController.text.trim(),
+        _emailController.text.trim(),
+        roleName,
+        phoneNumber: _phoneNumberController.text.trim(),
+        countryCode: _countryCodeController.text.trim(),
+        dateOfBirth: formattedDateOfBirth,
+        profileImage: profileImageUrl,
+        address: _addressController.text.trim(),
+        state: _stateController.text.trim(),
+        pinCode: _pinCodeController.text.trim(),
+        skipWallet: true, // Skip wallet creation
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSubmitting = false;
+      });
+
+      if (result['success'] == true) {
+        final userData = result['user'] as Map<String, dynamic>?;
+        final userId = userData?['_id'] ?? userData?['id'];
+        final userEmail = _emailController.text.trim();
+
+        // Send invite email with username and password
+        final inviteResult = await AuthService.sendInvite(
+          userId: userId?.toString(),
+          email: userEmail,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        final newUser = <String, dynamic>{
+          'name': _nameController.text.trim(),
+          'email': userEmail,
+          _phoneFieldKey: _phoneNumberController.text.trim(),
+          _countryCodeFieldKey: _countryCodeController.text.trim(),
+          _dobFieldKey: _dateOfBirthController.text.trim(),
+          _addressFieldKey: _addressController.text.trim(),
+          _addressLine2FieldKey: _addressLine2Controller.text.trim(),
+          _stateFieldKey: _stateController.text.trim(),
+          _pinCodeFieldKey: _pinCodeController.text.trim(),
+          'role': roleName,
+          'status': _isActive ? 'Active' : 'Inactive',
+          'isVerified': _isActive,
+          if (userData != null) ...userData,
+        };
+        // Use uploaded image URL if available, otherwise use API response, otherwise use existing
+        if (profileImageUrl != null) {
+          newUser['profileImage'] = profileImageUrl;
+        } else if (userData?['profileImage'] != null) {
+          newUser['profileImage'] = userData!['profileImage'];
+        } else if (_imageUrl != null) {
+          newUser['profileImage'] = _imageUrl;
+        }
+
+        String message = result['message'] ?? 'User created successfully (without wallet)';
+        if (inviteResult['success'] == true) {
+          message = 'Non-wallet user created and invite email sent successfully with username and password';
+        } else {
+          message = 'Non-wallet user created successfully, but failed to send invite email: ${inviteResult['message']}';
+        }
+
+        final userName = _nameController.text.trim();
+
+        // Close the add user dialog first
+        if (mounted) {
+          Navigator.of(context).pop({
+            'event': 'created',
+            'user': newUser,
+            'message': message,
+            'sendInvite': inviteResult['success'] == true,
+            'email': userEmail,
+            'skipWallet': true,
+            if (_imageBytes != null) 'imageBytes': _imageBytes,
+          });
+        }
+
+        // Open permission selection dialog after user creation
+        if (mounted && userId != null && userId.toString().isNotEmpty) {
+          await _showPermissionDialog(userId.toString(), userName, userEmail, roleName);
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']?.toString() ?? 'Failed to create user'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSubmitting = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to create user: $e'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
   void _handleSendInvite() {
     if (_isSubmitting) {
       return;
@@ -1484,6 +1791,75 @@ class _AddUserDialogState extends State<AddUserDialog> {
                     : (value) {
                         setState(() {
                           _isActive = value;
+                        });
+                      },
+                activeColor: Colors.white,
+                activeTrackColor: activeColor,
+                inactiveThumbColor: Colors.white,
+                inactiveTrackColor: inactiveColor.withValues(alpha: 0.7),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNonWalletUserToggle(BuildContext context) {
+    final theme = Theme.of(context);
+    const activeColor = AppTheme.primaryColor;
+    final inactiveColor = AppTheme.textSecondary.withOpacity(0.3);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isNonWalletUser
+              ? activeColor.withOpacity(0.3)
+              : inactiveColor,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Icon(
+              Icons.account_circle_outlined,
+              size: 18,
+              color: _isNonWalletUser ? activeColor : inactiveColor,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Non Wallet User',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppTheme.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Transform.scale(
+              scale: 0.85,
+              child: Switch(
+                value: _isNonWalletUser,
+                onChanged: _isSubmitting
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _isNonWalletUser = value;
                         });
                       },
                 activeColor: Colors.white,

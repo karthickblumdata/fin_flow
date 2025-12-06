@@ -28,6 +28,10 @@ class PermissionMapper {
       'expenses.expenses_type.view',
       'expenses.expenses_report.view',
     ],
+    'settings': [
+      'settings.collection_custom_field.view',
+      'settings.collection_custom_field',
+    ],
     'quick_actions': ['dashboard.quick_actions.enable'],
   };
 
@@ -68,6 +72,8 @@ class PermissionMapper {
         return 'Accounts';
       case 'expenses':
         return 'Expenses';
+      case 'settings':
+        return 'Settings';
       case 'quick_actions':
         return 'Quick Actions';
       default:
@@ -91,6 +97,8 @@ class PermissionMapper {
         return Icons.account_balance_outlined;
       case 'expenses':
         return Icons.receipt_long_outlined;
+      case 'settings':
+        return Icons.settings_outlined;
       case 'quick_actions':
         return Icons.flash_on_outlined;
       default:

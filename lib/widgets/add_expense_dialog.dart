@@ -30,6 +30,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _remarkController = TextEditingController();
   
   int _currentStep = 1; // Step 1: Type Selection, Step 2: Details
   String? _selectedMode;
@@ -42,7 +43,8 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
   List<Map<String, dynamic>> _expenseTypes = [];
   XFile? _selectedProofImage;
   
-  List<String> _modes = [];
+  List<Map<String, dynamic>> _paymentModes = [];
+  String? _selectedPaymentModeId;
   final ImagePicker _imagePicker = ImagePicker();
 
   @override
@@ -56,6 +58,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
   void dispose() {
     _amountController.dispose();
     _descriptionController.dispose();
+    _remarkController.dispose();
     super.dispose();
   }
 
@@ -121,49 +124,34 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
         if (result['success'] == true) {
           final paymentModes = result['paymentModes'] as List<dynamic>? ?? [];
           
-          // Extract unique modes (Cash/UPI/Bank) from active payment modes
-          final Set<String> availableModes = {};
-          
-          for (final pm in paymentModes) {
-            // Check if payment mode is active
-            final isActive = pm['isActive'] == true;
-            if (!isActive) continue;
-            
-            // Extract mode from description (format: "mode:Cash" or similar)
-            final description = pm['description']?.toString() ?? '';
-            final parsed = PaymentModeService.parseDescription(description);
-            final mode = parsed['mode']?.toString();
-            
-            // If mode is found and is valid (Cash, UPI, or Bank), add it
-            if (mode != null && ['Cash', 'UPI', 'Bank'].contains(mode)) {
-              availableModes.add(mode);
-            }
-          }
-          
-          // Convert to sorted list
-          final sortedModes = availableModes.toList()..sort();
-          
+          // Store all active PaymentModes directly
           setState(() {
-            _modes = sortedModes;
-            // Set default selected mode to first available, or null if none
-            _selectedMode = sortedModes.isNotEmpty ? sortedModes.first : null;
+            _paymentModes = paymentModes
+                .where((pm) => pm['isActive'] == true)
+                .map((pm) => Map<String, dynamic>.from(pm))
+                .toList();
             _isLoadingModes = false;
+            // Set default selected payment mode to first available
+            if (_paymentModes.isNotEmpty) {
+              _selectedPaymentModeId = _paymentModes.first['_id']?.toString() ?? 
+                                      _paymentModes.first['id']?.toString();
+              // Derive mode from selected PaymentMode
+              final description = _paymentModes.first['description']?.toString() ?? '';
+              final parsed = PaymentModeService.parseDescription(description);
+              _selectedMode = parsed['mode']?.toString() ?? 'Cash';
+            }
           });
         } else {
-          // Fallback to default modes if loading fails
           setState(() {
-            _modes = ['Cash', 'UPI', 'Bank'];
-            _selectedMode = 'Cash';
+            _paymentModes = [];
             _isLoadingModes = false;
           });
         }
       }
     } catch (e) {
       if (mounted) {
-        // Fallback to default modes on error
         setState(() {
-          _modes = ['Cash', 'UPI', 'Bank'];
-          _selectedMode = 'Cash';
+          _paymentModes = [];
           _isLoadingModes = false;
         });
       }
@@ -226,6 +214,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
     try {
       final amount = double.parse(_amountController.text);
       final description = _descriptionController.text.trim();
+      final remark = _remarkController.text.trim();
       final category = _selectedExpenseType?['name']?.toString() ?? 'Misc';
       
       // Upload proof image if selected
@@ -260,6 +249,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
         amount: amount,
         mode: _selectedMode ?? 'Cash',
         description: description.isNotEmpty ? description : null,
+        remarks: remark.isNotEmpty ? remark : null,
         proofUrl: proofUrl,
       );
 
@@ -847,7 +837,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                             ],
                           ),
                         )
-                      : _modes.isEmpty
+                      : _paymentModes.isEmpty
                           ? Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -873,15 +863,31 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                               ),
                             )
                           : DropdownButtonFormField<String>(
-                              value: _selectedMode,
+                              value: _selectedPaymentModeId,
                               decoration: InputDecoration(
                                 labelText: 'Payment Mode',
                                 prefixIcon: const Icon(Icons.payment),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
+                                suffixIcon: _isLoadingModes
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: Padding(
+                                          padding: EdgeInsets.all(12.0),
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      )
+                                    : null,
                               ),
-                              items: _modes.map((mode) {
+                              items: _paymentModes.map((pm) {
+                                final modeName = pm['modeName']?.toString() ?? 'Unknown';
+                                final modeId = pm['_id']?.toString() ?? pm['id']?.toString();
+                                final description = pm['description']?.toString() ?? '';
+                                final parsed = PaymentModeService.parseDescription(description);
+                                final mode = parsed['mode']?.toString() ?? 'Cash';
+                                
                                 IconData icon;
                                 if (mode == 'Cash') {
                                   icon = Icons.money;
@@ -892,21 +898,32 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                                 }
 
                                 return DropdownMenuItem<String>(
-                                  value: mode,
+                                  value: modeId,
                                   child: Row(
                                     children: [
                                       Icon(icon, size: 20, color: AppTheme.primaryColor),
                                       const SizedBox(width: 12),
-                                      Text(mode),
+                                      Text(modeName),
                                     ],
                                   ),
                                 );
                               }).toList(),
                               onChanged: (String? newValue) {
                                 if (newValue != null) {
-                                  setState(() {
-                                    _selectedMode = newValue;
-                                  });
+                                  final selectedPM = _paymentModes.firstWhere(
+                                    (pm) => (pm['_id']?.toString() ?? pm['id']?.toString()) == newValue,
+                                    orElse: () => {},
+                                  );
+                                  if (selectedPM.isNotEmpty) {
+                                    final description = selectedPM['description']?.toString() ?? '';
+                                    final parsed = PaymentModeService.parseDescription(description);
+                                    final mode = parsed['mode']?.toString() ?? 'Cash';
+                                    
+                                    setState(() {
+                                      _selectedPaymentModeId = newValue;
+                                      _selectedMode = mode;
+                                    });
+                                  }
                                 }
                               },
                               validator: (value) {
@@ -926,6 +943,21 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                       labelText: 'Description (Optional)',
                       hintText: 'Enter description',
                       prefixIcon: const Icon(Icons.description),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: isMobile ? 16 : 20),
+                  
+                  // Remark Input (Optional)
+                  TextFormField(
+                    controller: _remarkController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      labelText: 'Remark (Optional)',
+                      hintText: 'Enter remark',
+                      prefixIcon: const Icon(Icons.note_outlined),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),

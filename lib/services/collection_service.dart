@@ -48,6 +48,7 @@ class CollectionService {
     String? assignedReceiver,
     String? proofUrl,
     String? notes,
+    Map<String, String>? customFields,
   }) async {
     try {
       final response = await ApiService.post(ApiConstants.createCollection, {
@@ -58,6 +59,7 @@ class CollectionService {
         if (assignedReceiver != null) 'assignedReceiver': assignedReceiver,
         if (proofUrl != null) 'proofUrl': proofUrl,
         if (notes != null) 'notes': notes,
+        if (customFields != null && customFields.isNotEmpty) 'customFields': customFields,
       });
 
       return {

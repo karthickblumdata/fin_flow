@@ -53,6 +53,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
   late String _addressLine2FieldKey;
   late String _stateFieldKey;
   late String _pinCodeFieldKey;
+  bool _isNonWalletUser = false;
   bool _emailHasInput = false;
   bool _emailIsValid = false;
   DateTime? _selectedDateOfBirth;
@@ -92,9 +93,56 @@ class _EditUserDialogState extends State<EditUserDialog> {
     );
     _dobFieldKey = dobResolution.key;
     _selectedDateOfBirth = _parseDate(dobResolution.value);
-    _dateOfBirthController = TextEditingController(
-      text: _selectedDateOfBirth != null ? _dateFormat.format(_selectedDateOfBirth!) : dobResolution.value,
-    );
+    // Format date properly - if parsed successfully, use formatted date, otherwise try to show the raw value
+    String dobText;
+    if (_selectedDateOfBirth != null) {
+      dobText = _dateFormat.format(_selectedDateOfBirth!);
+    } else if (dobResolution.value.isNotEmpty) {
+      // If we have a value but couldn't parse it, try one more time with different approach
+      // Sometimes dates come as ISO timestamp or other formats from backend
+      try {
+        // Try parsing as ISO date string (most common from backend: "2004-12-20T00:00:00.000Z")
+        final value = dobResolution.value.trim();
+        
+        // First, try DateTime.parse for ISO strings (handles full ISO format with time)
+        try {
+          final isoDate = DateTime.parse(value);
+          _selectedDateOfBirth = isoDate;
+          dobText = _dateFormat.format(isoDate);
+        } catch (_) {
+          // If ISO parse fails, try manual parsing for date-only formats
+          if (value.contains('-') && value.length >= 8) {
+            // Handle formats like "2004-12-20" or "2004-12-20T00:00:00.000Z"
+            final datePart = value.split('T')[0]; // Get date part before 'T' if present
+            final parts = datePart.split('-');
+            if (parts.length >= 3) {
+              final year = int.tryParse(parts[0]);
+              final month = int.tryParse(parts[1]);
+              final day = int.tryParse(parts[2]);
+              if (year != null && month != null && day != null && 
+                  year > 1900 && year < 2100 && 
+                  month >= 1 && month <= 12 && 
+                  day >= 1 && day <= 31) {
+                _selectedDateOfBirth = DateTime(year, month, day);
+                dobText = _dateFormat.format(_selectedDateOfBirth!);
+              } else {
+                dobText = value;
+              }
+            } else {
+              dobText = value;
+            }
+          } else {
+            dobText = value;
+          }
+        }
+      } catch (e) {
+        // If all parsing fails, show the raw value
+        dobText = dobResolution.value;
+      }
+    } else {
+      dobText = '';
+    }
+    _dateOfBirthController = TextEditingController(text: dobText);
     final addressResolution = _resolveField(
       widget.user,
       const ['address', 'homeAddress', 'residentialAddress', 'mailingAddress'],
@@ -136,6 +184,39 @@ class _EditUserDialogState extends State<EditUserDialog> {
     _roleController = TextEditingController(text: _selectedRole);
     _isActive = _normalizeStatus(widget.user['status']) == 'active' ||
         (widget.user['isVerified'] is bool && widget.user['isVerified'] == true);
+    // Check if user is non-wallet user
+    // Priority: First check isNonWalletUser field (most reliable), then check wallet object
+    final isNonWalletUserField = widget.user['isNonWalletUser'];
+    
+    // Check if field exists and has a value (safe check for Flutter web)
+    final hasField = widget.user.containsKey('isNonWalletUser');
+    
+    if (hasField && isNonWalletUserField != null) {
+      // Backend explicitly sets isNonWalletUser field
+      // Handle different types: bool, String, int (1/0)
+      if (isNonWalletUserField is bool) {
+        _isNonWalletUser = isNonWalletUserField;
+      } else if (isNonWalletUserField is String) {
+        final strValue = isNonWalletUserField.toString().toLowerCase().trim();
+        _isNonWalletUser = strValue == 'true' || strValue == '1';
+      } else if (isNonWalletUserField is int) {
+        _isNonWalletUser = isNonWalletUserField == 1;
+      } else if (isNonWalletUserField is num) {
+        _isNonWalletUser = isNonWalletUserField == 1 || isNonWalletUserField == 1.0;
+      } else {
+        // Fallback: treat as false if type is unexpected
+        _isNonWalletUser = false;
+      }
+    } else {
+      // Fallback: Check if wallet exists (for backward compatibility)
+      // Wallet can be null, undefined, or wallet object might not exist
+      final wallet = widget.user['wallet'];
+      final hasWallet = wallet != null && 
+                        wallet is Map && 
+                        wallet.isNotEmpty &&
+                        widget.user['hasWallet'] != false;
+      _isNonWalletUser = !hasWallet;
+    }
     _imageUrl = _extractImageUrl(widget.user);
     _loadUserInfo();
     _loadAvailableRoles();
@@ -486,14 +567,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                     ],
                                   );
 
-                                  final Widget statePinGroup = Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      stateField,
-                                      const SizedBox(height: 16),
-                                      pinCodeField,
-                                    ],
-                                  );
+                                  // State moved to left column, PIN Code stays in right sidebar for desktop
 
                                   final Widget leftColumn = Column(
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -506,10 +580,12 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                       const SizedBox(height: 24),
                                       addressGroup,
                                       const SizedBox(height: 16),
+                                      stateField,
+                                      const SizedBox(height: 16),
                                     ],
                                   );
 
-                                  // Desktop avatar panel (with State and PIN Code)
+                                  // Desktop avatar panel (with PIN Code only)
                                   final Widget avatarPanelDesktop = Column(
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
@@ -521,8 +597,10 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                       roleField,
                                       const SizedBox(height: 24),
                                       _buildStatusSelector(context),
+                                      const SizedBox(height: 24),
+                                      _buildNonWalletUserToggle(context),
                                       const SizedBox(height: 32),
-                                      statePinGroup,
+                                      pinCodeField,
                                     ],
                                   );
 
@@ -538,6 +616,8 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                       roleField,
                                       const SizedBox(height: 24),
                                       _buildStatusSelector(context),
+                                      const SizedBox(height: 24),
+                                      _buildNonWalletUserToggle(context),
                                     ],
                                   );
 
@@ -592,7 +672,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                       const SizedBox(height: 16),
                                       formPanel,
                                       const SizedBox(height: 16),
-                                      statePinGroup,
+                                      pinCodeField,
                                     ],
                                   );
                                 },
@@ -1119,6 +1199,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
         state: _stateController.text.trim(),
         pinCode: _pinCodeController.text.trim(),
         isVerified: _isActive,
+        isNonWalletUser: _isNonWalletUser,
       );
 
       if (!mounted) return;
@@ -1150,6 +1231,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
       updatedUser['role'] = _roleController.text.trim();
       updatedUser['status'] = _isActive ? 'Active' : 'Inactive';
       updatedUser['isVerified'] = _isActive;
+      updatedUser['isNonWalletUser'] = _isNonWalletUser;
       // Use uploaded image URL if available, otherwise use API response, otherwise use existing
       if (profileImageUrl != null) {
         updatedUser['profileImage'] = profileImageUrl;
@@ -1345,6 +1427,75 @@ class _EditUserDialogState extends State<EditUserDialog> {
     );
   }
 
+  Widget _buildNonWalletUserToggle(BuildContext context) {
+    final theme = Theme.of(context);
+    const activeColor = AppTheme.primaryColor;
+    final inactiveColor = AppTheme.textSecondary.withOpacity(0.3);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isNonWalletUser
+              ? activeColor.withOpacity(0.3)
+              : inactiveColor,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Icon(
+              Icons.account_circle_outlined,
+              size: 18,
+              color: _isNonWalletUser ? activeColor : inactiveColor,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Non Wallet User',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppTheme.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Transform.scale(
+              scale: 0.85,
+              child: Switch(
+                value: _isNonWalletUser,
+                onChanged: _isSubmitting
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _isNonWalletUser = value;
+                        });
+                      },
+                activeColor: Colors.white,
+                activeTrackColor: activeColor,
+                inactiveThumbColor: Colors.white,
+                inactiveTrackColor: inactiveColor.withValues(alpha: 0.7),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleDateOfBirthTap() async {
     if (_isSubmitting) return;
     FocusScope.of(context).unfocus();
@@ -1378,11 +1529,22 @@ class _EditUserDialogState extends State<EditUserDialog> {
     if (trimmed.isEmpty) {
       return null;
     }
+    
+    // First, try parsing as ISO string (handles full ISO format with time: "2004-12-20T00:00:00.000Z")
+    try {
+      return DateTime.parse(trimmed);
+    } catch (_) {
+      // ISO parse failed, continue to format-based parsing
+    }
+    
+    // Try format-based parsing for common date formats
     final List<DateFormat> formats = <DateFormat>[
-      _dateFormat,
+      _dateFormat, // 'dd/MM/yyyy'
       DateFormat('yyyy-MM-dd'),
       DateFormat('MM/dd/yyyy'),
       DateFormat('yyyy/MM/dd'),
+      DateFormat('dd-MM-yyyy'),
+      DateFormat('MM-dd-yyyy'),
     ];
     for (final format in formats) {
       try {
@@ -1391,6 +1553,28 @@ class _EditUserDialogState extends State<EditUserDialog> {
         continue;
       }
     }
+    
+    // If all parsing fails, try to extract date from ISO-like strings manually
+    if (trimmed.contains('-') && trimmed.length >= 8) {
+      try {
+        final datePart = trimmed.split('T')[0].split(' ')[0]; // Get date part
+        final parts = datePart.split('-');
+        if (parts.length >= 3) {
+          final year = int.tryParse(parts[0]);
+          final month = int.tryParse(parts[1]);
+          final day = int.tryParse(parts[2]);
+          if (year != null && month != null && day != null && 
+              year > 1900 && year < 2100 && 
+              month >= 1 && month <= 12 && 
+              day >= 1 && day <= 31) {
+            return DateTime(year, month, day);
+          }
+        }
+      } catch (_) {
+        // Manual parsing failed
+      }
+    }
+    
     return null;
   }
 

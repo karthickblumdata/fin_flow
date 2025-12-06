@@ -59,26 +59,37 @@ class _LoginScreenState extends State<LoginScreen> {
               print('✅ Socket.IO initialized for Super Admin');
             }
 
-            // Check if user has dashboard access permission
-            final hasDashboardAccess = await UIPermissionChecker.canViewScreen('dashboard');
+            // Check if user is non-wallet user
+            final isNonWallet = await AuthService.isNonWalletUser();
             
-            if (hasDashboardAccess) {
-              // User has dashboard access - route to dashboard
-              // SuperAdmin goes to SuperAdminDashboard, others can also use it (it handles both)
+            if (isNonWallet) {
+              // Non-wallet users: Redirect to All User Wallets view
               if (mounted) {
-                context.go('/dashboard');
+                context.go('/wallet/all');
               }
             } else {
-              // User doesn't have dashboard permission
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('You do not have permission to access the dashboard. Please contact your administrator.'),
-                    backgroundColor: AppTheme.errorColor,
-                  ),
-                );
+              // Check if user has dashboard access permission
+              final hasDashboardAccess = await UIPermissionChecker.canViewScreen('dashboard');
+              
+              if (hasDashboardAccess) {
+                // User has dashboard access - route to dashboard
+                // SuperAdmin goes to SuperAdminDashboard, others can also use it (it handles both)
+                if (mounted) {
+                  context.go('/dashboard');
+                }
+              } else {
+                // User doesn't have dashboard permission
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('You do not have permission to access the dashboard. Please contact your administrator.'),
+                      backgroundColor: AppTheme.errorColor,
+                      duration: const Duration(seconds: 4),
+                    ),
+                  );
+                }
+                return;
               }
-              return;
             }
           }
         } else {

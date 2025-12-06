@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
+import '../utils/ui_permission_checker.dart';
 
-class UserActionBottomSheet extends StatelessWidget {
+class UserActionBottomSheet extends StatefulWidget {
   final String userName;
   final String userId;
   final String userEmail;
@@ -21,6 +22,40 @@ class UserActionBottomSheet extends StatelessWidget {
     this.onAddExpense,
     this.onAddTransaction,
   });
+
+  @override
+  State<UserActionBottomSheet> createState() => _UserActionBottomSheetState();
+}
+
+class _UserActionBottomSheetState extends State<UserActionBottomSheet> {
+  bool _canAddAmount = false;
+  bool _canAddCollection = false;
+  bool _canAddExpense = false;
+  bool _canAddTransaction = false;
+  bool _isLoadingPermissions = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPermissions();
+  }
+
+  Future<void> _loadPermissions() async {
+    final canAddAmount = await UIPermissionChecker.hasPermission('wallet.all.add_amount');
+    final canAddCollection = await UIPermissionChecker.hasPermission('wallet.all.add_collection');
+    final canAddExpense = await UIPermissionChecker.hasPermission('wallet.all.add_expense');
+    final canAddTransaction = await UIPermissionChecker.hasPermission('wallet.all.add_transaction');
+
+    if (mounted) {
+      setState(() {
+        _canAddAmount = canAddAmount;
+        _canAddCollection = canAddCollection;
+        _canAddExpense = canAddExpense;
+        _canAddTransaction = canAddTransaction;
+        _isLoadingPermissions = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +92,7 @@ class UserActionBottomSheet extends StatelessWidget {
                   ),
                   child: Center(
                     child: Text(
-                      _getInitials(userName),
+                      _getInitials(widget.userName),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -74,15 +109,15 @@ class UserActionBottomSheet extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              userName,
-                              style: AppTheme.headingSmall.copyWith(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                      child: Text(
+                      widget.userName,
+                      style: AppTheme.headingSmall.copyWith(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                           ),
                           const SizedBox(width: 8),
                           ElevatedButton.icon(
@@ -92,8 +127,8 @@ class UserActionBottomSheet extends StatelessWidget {
                               final uri = Uri(
                                 path: '/wallet/overview',
                                 queryParameters: {
-                                  'userId': userId,
-                                  'userLabel': userName,
+                                  'userId': widget.userId,
+                                  'userLabel': widget.userName,
                                 },
                               );
                               context.push(uri.toString());
@@ -118,7 +153,7 @@ class UserActionBottomSheet extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        userEmail,
+                        widget.userEmail,
                         style: AppTheme.bodySmall.copyWith(
                           color: AppTheme.textSecondary,
                           fontSize: 13,
@@ -143,79 +178,149 @@ class UserActionBottomSheet extends StatelessWidget {
           // Action buttons
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _buildActionButton(
-                  context: context,
-                  icon: Icons.add_circle_outline,
-                  title: 'Add Amount',
-                  subtitle: 'Add money to ${userName}\'s wallet',
-                  color: AppTheme.secondaryColor,
-                  onTap: () async {
-                    // Close bottom sheet first
-                    Navigator.of(context).pop();
-                    // Wait a bit for bottom sheet to close completely
-                    await Future.delayed(const Duration(milliseconds: 300));
-                    // Then call the callback
-                    onAddAmount?.call();
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildActionButton(
-                  context: context,
-                  icon: Icons.payment,
-                  title: 'Add Collection',
-                  subtitle: 'Create collection for ${userName}',
-                  color: const Color(0xFF1F9D4D),
-                  onTap: () async {
-                    // Close bottom sheet first
-                    Navigator.of(context).pop();
-                    // Wait a bit for bottom sheet to close completely
-                    await Future.delayed(const Duration(milliseconds: 300));
-                    // Then call the callback
-                    onAddCollection?.call();
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildActionButton(
-                  context: context,
-                  icon: Icons.receipt_long,
-                  title: 'Add Expense',
-                  subtitle: 'Record expense for ${userName}',
-                  color: AppTheme.warningColor,
-                  onTap: () async {
-                    // Close bottom sheet first
-                    Navigator.of(context).pop();
-                    // Wait a bit for bottom sheet to close completely
-                    await Future.delayed(const Duration(milliseconds: 300));
-                    // Then call the callback
-                    onAddExpense?.call();
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildActionButton(
-                  context: context,
-                  icon: Icons.swap_horiz,
-                  title: 'Add Transaction',
-                  subtitle: 'Transfer money to ${userName}',
-                  color: AppTheme.primaryColor,
-                  onTap: () async {
-                    // Close bottom sheet first
-                    Navigator.of(context).pop();
-                    // Wait a bit for bottom sheet to close completely
-                    await Future.delayed(const Duration(milliseconds: 300));
-                    // Then call the callback
-                    onAddTransaction?.call();
-                  },
-                ),
-              ],
-            ),
+            child: _isLoadingPermissions
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                : _buildActionButtons(),
           ),
           
           // Bottom padding for safe area
           SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
         ],
       ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    final List<Widget> actionButtons = [];
+
+    // Add Amount button - only show if permission is checked
+    if (_canAddAmount) {
+      actionButtons.add(
+        _buildActionButton(
+          context: context,
+          icon: Icons.add_circle_outline,
+          title: 'Add Amount',
+          subtitle: 'Add money to ${widget.userName}\'s wallet',
+          color: AppTheme.secondaryColor,
+          onTap: () async {
+            // Close bottom sheet first
+            Navigator.of(context).pop();
+            // Wait a bit for bottom sheet to close completely
+            await Future.delayed(const Duration(milliseconds: 300));
+            // Then call the callback
+            widget.onAddAmount?.call();
+          },
+        ),
+      );
+      actionButtons.add(const SizedBox(height: 12));
+    }
+
+    // Add Collection button - only show if permission is checked
+    if (_canAddCollection) {
+      actionButtons.add(
+        _buildActionButton(
+          context: context,
+          icon: Icons.payment,
+          title: 'Add Collection',
+          subtitle: 'Create collection for ${widget.userName}',
+          color: const Color(0xFF1F9D4D),
+          onTap: () async {
+            // Close bottom sheet first
+            Navigator.of(context).pop();
+            // Wait a bit for bottom sheet to close completely
+            await Future.delayed(const Duration(milliseconds: 300));
+            // Then call the callback
+            widget.onAddCollection?.call();
+          },
+        ),
+      );
+      actionButtons.add(const SizedBox(height: 12));
+    }
+
+    // Add Expense button - only show if permission is checked
+    if (_canAddExpense) {
+      actionButtons.add(
+        _buildActionButton(
+          context: context,
+          icon: Icons.receipt_long,
+          title: 'Add Expense',
+          subtitle: 'Record expense for ${widget.userName}',
+          color: AppTheme.warningColor,
+          onTap: () async {
+            // Close bottom sheet first
+            Navigator.of(context).pop();
+            // Wait a bit for bottom sheet to close completely
+            await Future.delayed(const Duration(milliseconds: 300));
+            // Then call the callback
+            widget.onAddExpense?.call();
+          },
+        ),
+      );
+      actionButtons.add(const SizedBox(height: 12));
+    }
+
+    // Add Transaction button - only show if permission is checked
+    if (_canAddTransaction) {
+      actionButtons.add(
+        _buildActionButton(
+          context: context,
+          icon: Icons.swap_horiz,
+          title: 'Add Transaction',
+          subtitle: 'Transfer money to ${widget.userName}',
+          color: AppTheme.primaryColor,
+          onTap: () async {
+            // Close bottom sheet first
+            Navigator.of(context).pop();
+            // Wait a bit for bottom sheet to close completely
+            await Future.delayed(const Duration(milliseconds: 300));
+            // Then call the callback
+            widget.onAddTransaction?.call();
+          },
+        ),
+      );
+    }
+
+    // If no permissions, show message
+    if (actionButtons.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 48,
+                color: AppTheme.textSecondary.withOpacity(0.5),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'No actions available',
+                style: AppTheme.bodyMedium.copyWith(
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'You don\'t have permission to perform any actions',
+                style: AppTheme.bodySmall.copyWith(
+                  color: AppTheme.textSecondary.withOpacity(0.7),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: actionButtons,
     );
   }
 

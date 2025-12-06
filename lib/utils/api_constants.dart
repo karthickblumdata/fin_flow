@@ -49,6 +49,7 @@ class ApiConstants {
   
   // Wallet endpoints
   static const String getWallet = '/wallet';
+  static const String checkWalletExists = '/wallet/check';
   static const String getAllWallets = '/wallet/all';
   static const String addWallet = '/wallet/add';
   static const String withdrawWallet = '/wallet/withdraw';
@@ -99,6 +100,10 @@ class ApiConstants {
   static const String flagExpense = '/expenses'; // /:id/flag
   static const String editExpense = '/expenses'; // /:id
   
+  // Expense Report Screen endpoints
+  static const String getExpenseReportScreenData = '/expense-report-screen/data';
+  static const String getExpenseReportScreenSummary = '/expense-report-screen/summary';
+  
   // Payment Mode endpoints
   static const String createPaymentMode = '/payment-modes';
   static const String getPaymentModes = '/payment-modes';
@@ -111,6 +116,12 @@ class ApiConstants {
   static const String updateExpenseTypeBase = '/expense-types'; // /:id
   static const String deleteExpenseTypeBase = '/expense-types'; // /:id
   static const String uploadExpenseTypeImage = '/expense-types/upload-image';
+  
+  // Custom Field endpoints
+  static const String createCustomField = '/collection-custom-fields';
+  static const String getCustomFields = '/collection-custom-fields';
+  static const String updateCustomFieldBase = '/collection-custom-fields'; // /:id
+  static const String deleteCustomFieldBase = '/collection-custom-fields'; // /:id
   
   // Dashboard endpoints
   static const String getDashboard = '/dashboard';
@@ -165,6 +176,9 @@ class ApiConstants {
   
   static String updateExpenseType(String id) => '$updateExpenseTypeBase/$id';
   static String deleteExpenseType(String id) => '$deleteExpenseTypeBase/$id';
+  
+  static String updateCustomField(String id) => '$updateCustomFieldBase/$id';
+  static String deleteCustomField(String id) => '$deleteCustomFieldBase/$id';
   
   static String walletTransactionById(String id) => '$getWalletTransactions/$id';
 }

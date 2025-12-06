@@ -269,12 +269,17 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
     // Load users if user has ANY permission
     final hasAnyPermission = _canCreate || _canEdit || _canDelete || _canView;
     
-    print('👥 User Management: Loading users');
-    print('   Permissions - Create: $_canCreate, Edit: $_canEdit, Delete: $_canDelete, View: $_canView');
-    print('   Has any permission: $hasAnyPermission');
+    // Safe debug logging
+    try {
+      debugPrint('👥 User Management: Loading users');
+      debugPrint('   Permissions - Create: $_canCreate, Edit: $_canEdit, Delete: $_canDelete, View: $_canView');
+      debugPrint('   Has any permission: $hasAnyPermission');
+    } catch (e) {
+      // Ignore debug errors
+    }
     
     if (!hasAnyPermission && mounted) {
-      print('⚠️  User Management: No permissions - not loading users');
+      debugPrint('⚠️  User Management: No permissions - not loading users');
       setState(() {
         _isLoading = false;
         _users = [];
@@ -329,34 +334,38 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
       if (result['success'] == true) {
         final users = result['users'] as List<dynamic>? ?? [];
         
-        print('👥 User Management: Loaded ${users.length} users from API');
-        print('   API Response success: ${result['success']}');
-        print('   Users count: ${users.length}');
-        
-        // Log first few users for debugging
-        if (users.isNotEmpty) {
-          print('   First user: ${users.first}');
-        } else {
-          print('   ⚠️  No users returned from API');
-        }
-        
-        // Log admin@examples.com if present
-        dynamic adminUser;
+        // Safe debug logging (avoid Flutter web errors)
         try {
-          adminUser = users.firstWhere(
-            (u) {
-              final email = (u is Map ? u['email'] : null)?.toString().toLowerCase() ?? '';
-              return email == 'admin@examples.com';
-            },
-          );
+          debugPrint('👥 User Management: Loaded ${users.length} users from API');
+          debugPrint('   API Response success: ${result['success']}');
+          debugPrint('   Users count: ${users.length}');
         } catch (e) {
-          adminUser = null;
+          // Ignore debug print errors on web
         }
         
-        if (adminUser != null && adminUser is Map) {
-          print('✅ Found admin@examples.com in user management: ${adminUser['name']}, role: ${adminUser['role']}');
-        } else {
-          print('⚠️  admin@examples.com user not found in user management API response');
+        // Log admin@examples.com if present (safe for web)
+        try {
+          dynamic adminUser;
+          try {
+            adminUser = users.firstWhere(
+              (u) {
+                final email = (u is Map ? u['email'] : null)?.toString().toLowerCase() ?? '';
+                return email == 'admin@examples.com';
+              },
+            );
+          } catch (e) {
+            adminUser = null;
+          }
+          
+          if (adminUser != null && adminUser is Map) {
+            final name = adminUser['name']?.toString() ?? 'Unknown';
+            final role = adminUser['role']?.toString() ?? 'Unknown';
+            debugPrint('✅ Found admin@examples.com in user management: $name, role: $role');
+          } else {
+            debugPrint('⚠️  admin@examples.com user not found in user management API response');
+          }
+        } catch (e) {
+          // Ignore debug errors
         }
         
         if (mounted) {
@@ -374,11 +383,20 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                 'role': rawUser['role'] ?? 'Staff',
                 'status': rawUser['isVerified'] == true ? 'Active' : 'Inactive',
                 'isVerified': rawUser['isVerified'] ?? false,
+                // Include isNonWalletUser field (important for EditUserDialog)
+                if (rawUser.containsKey('isNonWalletUser')) 'isNonWalletUser': rawUser['isNonWalletUser'],
                 if (contactNumber.isNotEmpty) 'contactNumber': contactNumber,
                 if (rawUser.containsKey('phone')) 'phone': rawUser['phone'],
                 if (rawUser.containsKey('phoneNumber')) 'phoneNumber': rawUser['phoneNumber'],
                 if (rawUser.containsKey('mobile')) 'mobile': rawUser['mobile'],
                 if (rawUser.containsKey('mobileNumber')) 'mobileNumber': rawUser['mobileNumber'],
+                // Include address fields for EditUserDialog
+                if (rawUser.containsKey('address')) 'address': rawUser['address'],
+                if (rawUser.containsKey('addressLine2')) 'addressLine2': rawUser['addressLine2'],
+                if (rawUser.containsKey('state')) 'state': rawUser['state'],
+                if (rawUser.containsKey('pinCode')) 'pinCode': rawUser['pinCode'],
+                if (rawUser.containsKey('countryCode')) 'countryCode': rawUser['countryCode'],
+                if (rawUser.containsKey('dateOfBirth')) 'dateOfBirth': rawUser['dateOfBirth'],
                 // Include profileImage and other profile-related fields
                 if (rawUser.containsKey('profileImage')) 'profileImage': rawUser['profileImage'],
                 if (rawUser.containsKey('profileUrl')) 'profileUrl': rawUser['profileUrl'],
@@ -397,9 +415,14 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                     },
               };
               
-              // Debug: Check if profileImage was included
-              if (rawUser.containsKey('profileImage') && rawUser['profileImage'] != null) {
-                print('✅ [USER MAP] Included profileImage for ${userMap['name']}: ${rawUser['profileImage']}');
+              // Debug: Check if profileImage was included (safe for web)
+              try {
+                if (rawUser.containsKey('profileImage') && rawUser['profileImage'] != null) {
+                  final userName = userMap['name']?.toString() ?? 'Unknown';
+                  debugPrint('✅ [USER MAP] Included profileImage for $userName');
+                }
+              } catch (e) {
+                // Ignore debug errors
               }
               
               return userMap;
@@ -407,11 +430,16 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
             _isLoading = false;
           });
           
-          print('✅ User Management: Set ${_users.length} users in state');
-          print('   Filtered users count: ${_filteredUsers.length}');
-          print('   Selected filter: $_selectedFilter');
-          print('   Selected status: $_selectedPlanStatus');
-          print('   Search query: "$_searchQuery"');
+          // Safe debug logging
+          try {
+            debugPrint('✅ User Management: Set ${_users.length} users in state');
+            debugPrint('   Filtered users count: ${_filteredUsers.length}');
+            debugPrint('   Selected filter: $_selectedFilter');
+            debugPrint('   Selected status: $_selectedPlanStatus');
+            debugPrint('   Search query: "$_searchQuery"');
+          } catch (e) {
+            // Ignore debug errors
+          }
           
           // Force rebuild to ensure UI updates
           if (mounted) {

@@ -2,6 +2,39 @@ import 'api_service.dart';
 import '../utils/api_constants.dart';
 
 class WalletService {
+  /// Check if user has wallet (without creating)
+  static Future<bool> hasWallet({String? userId}) async {
+    try {
+      String endpoint;
+      if (userId != null && userId.isNotEmpty) {
+        endpoint = '${ApiConstants.checkWalletExists}/$userId';
+      } else {
+        // For current user, call without userId parameter
+        endpoint = ApiConstants.checkWalletExists;
+      }
+      
+      print('🔍 [WALLET CHECK] Checking wallet for: ${userId ?? "current user"}');
+      print('   Endpoint: $endpoint');
+      
+      final response = await ApiService.get(endpoint);
+      
+      print('📥 [WALLET CHECK] Response: ${response['success']}, hasWallet: ${response['hasWallet']}');
+      
+      if (response['success'] == true) {
+        final hasWallet = response['hasWallet'] == true;
+        print('✅ [WALLET CHECK] User ${userId ?? "current user"} has wallet: $hasWallet');
+        return hasWallet;
+      }
+      
+      print('❌ [WALLET CHECK] API returned success: false');
+      return false;
+    } catch (e) {
+      print('❌ [WALLET CHECK] Error: $e');
+      // If error, assume wallet doesn't exist
+      return false;
+    }
+  }
+
   /// Get wallet balance
   static Future<Map<String, dynamic>> getWallet() async {
     try {

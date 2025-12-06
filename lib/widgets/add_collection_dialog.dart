@@ -6,17 +6,20 @@ import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/collection_service.dart';
 import '../services/payment_mode_service.dart';
+import '../services/custom_field_service.dart';
 
 class AddCollectionDialog extends StatefulWidget {
   final VoidCallback? onSuccess;
   final String? selectedUserName;
   final String? selectedUserId;
+  final List<Map<String, dynamic>>? selectedCustomFields;
 
   const AddCollectionDialog({
     super.key,
     this.onSuccess,
     this.selectedUserName,
     this.selectedUserId,
+    this.selectedCustomFields,
   });
 
   @override
@@ -36,11 +39,28 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
   File? _proofImage;
   bool _isLoading = false;
   bool _isLoadingAccounts = true;
+  bool _isLoadingCustomFields = true;
   List<Map<String, dynamic>> _accounts = [];
+  List<Map<String, dynamic>> _customFields = [];
+  Map<String, TextEditingController> _customFieldControllers = {};
 
   @override
   void initState() {
     super.initState();
+    // Initialize custom fields from widget parameter
+    if (widget.selectedCustomFields != null && widget.selectedCustomFields!.isNotEmpty) {
+      _customFields = List.from(widget.selectedCustomFields!);
+      for (var field in _customFields) {
+        final fieldId = field['id']?.toString() ?? field['_id']?.toString() ?? '';
+        if (fieldId.isNotEmpty) {
+          _customFieldControllers[fieldId] = TextEditingController();
+        }
+      }
+      _isLoadingCustomFields = false;
+    } else {
+      // Load all active custom fields that are enabled for collections
+      _loadCustomFields();
+    }
     // Use WidgetsBinding to ensure context is ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -50,11 +70,60 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
     });
   }
 
+  Future<void> _loadCustomFields() async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingCustomFields = true;
+    });
+
+    try {
+      final result = await CustomFieldService.getCustomFields();
+      if (mounted) {
+        if (result['success'] == true) {
+          final allFields = result['customFields'] as List<dynamic>? ?? [];
+          // Filter only active fields that are enabled for collections
+          final enabledFields = allFields.where((field) {
+            final isActive = field['isActive'] == true;
+            final useInCollections = field['useInCollections'] != false; // Default to true
+            return isActive && useInCollections;
+          }).toList();
+
+          setState(() {
+            _customFields = enabledFields.map((field) => field as Map<String, dynamic>).toList();
+            for (var field in _customFields) {
+              final fieldId = field['id']?.toString() ?? field['_id']?.toString() ?? '';
+              if (fieldId.isNotEmpty && !_customFieldControllers.containsKey(fieldId)) {
+                _customFieldControllers[fieldId] = TextEditingController();
+              }
+            }
+            _isLoadingCustomFields = false;
+          });
+        } else {
+          setState(() {
+            _isLoadingCustomFields = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingCustomFields = false;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     _customerNameController.dispose();
     _receiptNoController.dispose();
     _amountController.dispose();
+    // Dispose custom field controllers
+    for (var controller in _customFieldControllers.values) {
+      controller.dispose();
+    }
+    _customFieldControllers.clear();
     super.dispose();
   }
 
@@ -289,6 +358,16 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
         finalMode = _selectedMode ?? 'Cash';
       }
 
+      // Collect custom field values
+      final Map<String, String> customFieldsData = {};
+      for (var field in _customFields) {
+        final fieldId = field['id']?.toString() ?? field['_id']?.toString() ?? '';
+        final controller = _customFieldControllers[fieldId];
+        if (controller != null && controller.text.trim().isNotEmpty) {
+          customFieldsData[fieldId] = controller.text.trim();
+        }
+      }
+
       final result = await CollectionService.createCollection(
         customerName: _customerNameController.text.trim(),
         amount: double.parse(_amountController.text),
@@ -299,6 +378,7 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
         notes: _receiptNoController.text.trim().isNotEmpty
             ? 'Receipt No: ${_receiptNoController.text.trim()}'
             : null,
+        customFields: customFieldsData.isNotEmpty ? customFieldsData : null,
       );
 
       if (mounted) {
@@ -833,6 +913,54 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
                           },
                         ),
                       SizedBox(height: isMobile ? 16 : 20),
+
+                      // Custom Fields (after Account field)
+                      if (_isLoadingCustomFields)
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (_customFields.isNotEmpty) ...[
+                        ..._customFields.map((field) {
+                          final fieldId = field['id']?.toString() ?? field['_id']?.toString() ?? '';
+                          final fieldName = field['name']?.toString() ?? 'Custom Field';
+                          final controller = _customFieldControllers[fieldId] ?? TextEditingController();
+                          if (!_customFieldControllers.containsKey(fieldId)) {
+                            _customFieldControllers[fieldId] = controller;
+                          }
+                          
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                fieldName,
+                                style: AppTheme.labelMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: controller,
+                                decoration: InputDecoration(
+                                  hintText: 'Enter $fieldName...',
+                                  prefixIcon: const Icon(Icons.text_fields),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: isMobile ? 10 : 14,
+                                  ),
+                                ),
+                                style: TextStyle(
+                                  fontSize: isMobile ? 15 : 15,
+                                ),
+                              ),
+                              SizedBox(height: isMobile ? 16 : 20),
+                            ],
+                          );
+                        }).toList(),
+                      ],
 
                       // Proof Image
                       Text(

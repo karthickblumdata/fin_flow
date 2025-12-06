@@ -158,6 +158,145 @@ class ExpenseService {
     }
   }
 
+  /// Get expense report screen data with date filters and pagination
+  static Future<Map<String, dynamic>> getExpenseReportScreenData({
+    String? from,
+    String? to,
+    String? status,
+    String? category,
+    String? userId,
+    String? cursor,
+    int? limit,
+  }) async {
+    try {
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('📤 [EXPENSE REPORT SCREEN] Backend API Call Starting...');
+      debugPrint('   Endpoint: ${ApiConstants.getExpenseReportScreenData}');
+      
+      final queryParams = <String, String>{};
+      
+      if (from != null && from.isNotEmpty) queryParams['from'] = from;
+      if (to != null && to.isNotEmpty) queryParams['to'] = to;
+      if (status != null && status.isNotEmpty && status != 'All') queryParams['status'] = status;
+      if (category != null && category.isNotEmpty && category != 'All') queryParams['category'] = category;
+      if (userId != null && userId.isNotEmpty) queryParams['userId'] = userId;
+      if (cursor != null && cursor.isNotEmpty) queryParams['cursor'] = cursor;
+      if (limit != null) queryParams['limit'] = limit.toString();
+
+      debugPrint('   Query Parameters:');
+      queryParams.forEach((key, value) {
+        debugPrint('      $key: $value');
+      });
+      
+      final response = await ApiService.get(
+        ApiConstants.getExpenseReportScreenData,
+        queryParams: queryParams.isNotEmpty ? queryParams : null,
+      );
+
+      debugPrint('   ✅ API Response Received');
+      debugPrint('   Success: ${response['success']}');
+
+      if (response['success'] == true && response['data'] != null) {
+        final data = response['data'] as Map<String, dynamic>;
+        final expenses = data['expenses'] as List<dynamic>? ?? [];
+        final summary = data['summary'] as Map<String, dynamic>? ?? {};
+        final pagination = data['pagination'] as Map<String, dynamic>? ?? {};
+        
+        debugPrint('   Expenses count: ${expenses.length}');
+        debugPrint('   Summary: ${summary.toString()}');
+        
+        return {
+          'success': true,
+          'expenses': expenses,
+          'summary': summary,
+          'pagination': pagination,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? 'Failed to get expense report data',
+          'expenses': [],
+          'summary': {},
+          'pagination': {},
+        };
+      }
+    } catch (e) {
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('❌ [EXPENSE REPORT SCREEN] API Call Exception:');
+      debugPrint('   Error: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      return {
+        'success': false,
+        'message': e.toString().replaceFirst('Exception: ', ''),
+        'expenses': [],
+        'summary': {},
+        'pagination': {},
+      };
+    }
+  }
+
+  /// Get expense report screen summary only
+  static Future<Map<String, dynamic>> getExpenseReportScreenSummary({
+    String? from,
+    String? to,
+    String? status,
+    String? category,
+    String? userId,
+  }) async {
+    try {
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('📤 [EXPENSE REPORT SCREEN SUMMARY] Backend API Call Starting...');
+      debugPrint('   Endpoint: ${ApiConstants.getExpenseReportScreenSummary}');
+      
+      final queryParams = <String, String>{};
+      
+      if (from != null && from.isNotEmpty) queryParams['from'] = from;
+      if (to != null && to.isNotEmpty) queryParams['to'] = to;
+      if (status != null && status.isNotEmpty && status != 'All') queryParams['status'] = status;
+      if (category != null && category.isNotEmpty && category != 'All') queryParams['category'] = category;
+      if (userId != null && userId.isNotEmpty) queryParams['userId'] = userId;
+
+      debugPrint('   Query Parameters:');
+      queryParams.forEach((key, value) {
+        debugPrint('      $key: $value');
+      });
+      
+      final response = await ApiService.get(
+        ApiConstants.getExpenseReportScreenSummary,
+        queryParams: queryParams.isNotEmpty ? queryParams : null,
+      );
+
+      debugPrint('   ✅ API Response Received');
+      debugPrint('   Success: ${response['success']}');
+
+      if (response['success'] == true && response['summary'] != null) {
+        final summary = response['summary'] as Map<String, dynamic>;
+        debugPrint('   Summary: ${summary.toString()}');
+        
+        return {
+          'success': true,
+          'summary': summary,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? 'Failed to get expense report summary',
+          'summary': {},
+        };
+      }
+    } catch (e) {
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('❌ [EXPENSE REPORT SCREEN SUMMARY] API Call Exception:');
+      debugPrint('   Error: $e');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      return {
+        'success': false,
+        'message': e.toString().replaceFirst('Exception: ', ''),
+        'summary': {},
+      };
+    }
+  }
+
   /// Create new expense
   static Future<Map<String, dynamic>> createExpense({
     String? userId, // Optional: Admin/SuperAdmin can specify userId for other users
@@ -165,6 +304,7 @@ class ExpenseService {
     required double amount,
     required String mode,
     String? description, // Optional: Description can be empty for Super Admin
+    String? remarks, // Optional: Remarks field
     String? proofUrl, // Optional: Proof image can be empty
   }) async {
     try {
@@ -207,6 +347,11 @@ class ExpenseService {
         // If user is SuperAdmin, empty string is allowed
         // If user is not SuperAdmin, backend will return 400
         requestData['description'] = '';
+      }
+      
+      // Add remarks only if provided (not empty), otherwise omit it
+      if (remarks != null && remarks.trim().isNotEmpty) {
+        requestData['remarks'] = remarks.trim();
       }
       
       // Add proofUrl only if provided (not empty), otherwise omit it
@@ -317,6 +462,7 @@ class ExpenseService {
     double? amount,
     String? mode,
     String? description,
+    String? remarks,
     String? proofUrl,
     bool fromAllWalletReport = false,
   }) async {
@@ -334,6 +480,7 @@ class ExpenseService {
       if (amount != null) body['amount'] = amount;
       if (mode != null) body['mode'] = mode;
       if (description != null) body['description'] = description;
+      if (remarks != null && remarks.isNotEmpty) body['remarks'] = remarks;
       if (proofUrl != null) body['proofUrl'] = proofUrl;
       if (fromAllWalletReport) body['fromAllWalletReport'] = true;
 

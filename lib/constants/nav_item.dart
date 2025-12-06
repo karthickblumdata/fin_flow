@@ -14,5 +14,6 @@ enum NavItem {
   expenseType,
   expenseReport,
   smartApprovals,
+  collectionCustomField,
 }
 

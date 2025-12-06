@@ -37,6 +37,7 @@ import '../common/manage_users_screen.dart';
 import '../common/manage_expense_types_screen.dart';
 import '../common/collections_screen.dart';
 import '../common/all_user_wallets_screen.dart';
+import '../common/collection_custom_field_screen.dart';
 import '../common/recent_activity_screen.dart';
 import '../common/all_transactions_screen.dart';
 import '../common/roles_screen.dart';
@@ -261,6 +262,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   bool _usersExpanded = false;
   bool _accountExpanded = false;
   bool _expensesExpanded = false;
+  bool _settingsExpanded = false;
   bool _isRefreshing = false;
   bool _isSidebarCollapsed = false;
   bool _isDrawerOpen = false;
@@ -273,6 +275,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   // Permission state variables
   bool _canViewDashboard = true;
   bool _canViewWalletSelf = false;
+  bool _isNonWalletUser = false; // Track if current user is non-wallet user
   bool _canViewWalletAll = false;
   bool _canViewWalletOverview = false;
   bool _canViewSmartApprovals = false;
@@ -286,9 +289,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   bool _canViewUsersMenu = false;
   bool _canViewPaymentAccountsMenu = false;
   bool _canViewExpensesMenu = false;
+  bool _canViewSettingsMenu = false;
   bool _canEnableQuickActions = false;
   bool _canAddAmount = false;
   bool _canWithdraw = false;
+  bool _canViewFlaggedFinancialFlow = false;
+  bool _canViewStatusCountTable = false;
   bool _isSuperAdmin = false;
   bool _permissionsLoaded = false;
   
@@ -304,6 +310,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   bool _canRejectTransaction = false;
   bool _canFlagTransaction = false;
   bool _canApproveTransaction = false;
+  bool _canUnapproveTransaction = false;
   bool _canExportTransaction = false;
   
   // Self Wallet Expenses action permissions
@@ -313,6 +320,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   bool _canRejectExpenses = false;
   bool _canFlagExpenses = false;
   bool _canApproveExpenses = false;
+  bool _canUnapproveExpenses = false;
   bool _canExportExpenses = false;
   
   // Self Wallet Collection action permissions
@@ -322,6 +330,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   bool _canRejectCollection = false;
   bool _canFlagCollection = false;
   bool _canApproveCollection = false;
+  bool _canUnapproveCollection = false;
   bool _canExportCollection = false;
   
   // All Wallet Report Transaction action permissions
@@ -344,6 +353,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   bool _canDeleteReportExpenses = false;
   bool _canRejectReportExpenses = false;
   bool _canFlagReportExpenses = false;
+  
+  // All User Wallets action permissions (top-level)
+  bool _canAddExpenseAll = false;
+  bool _canAddAmountAll = false;
+  bool _canAddCollectionAll = false;
+  bool _canAddTransactionAll = false;
+  bool _canWithdrawAll = false;
   
   
   static const Map<String, ActionButtonSetting> _defaultActionButtonSettings = {
@@ -437,6 +453,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   final GlobalKey<FormState> _addExpenseFormKey = GlobalKey<FormState>();
   final TextEditingController _expenseAmountController = TextEditingController();
   final TextEditingController _expenseDescriptionController = TextEditingController();
+  final TextEditingController _expenseRemarkController = TextEditingController();
   String? _selectedExpenseAccountId;
   String _selectedExpenseCategory = 'Office';
   String _selectedExpenseMode = 'Cash';
@@ -625,6 +642,57 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   static const List<String> _accountReportsModeOptions = ['All', 'Cash', 'UPI', 'Bank'];
 
   // Get active mode options from payment modes - show actual payment mode names
+  /// Get mode options from actual data (only modes used in transactions)
+  List<String> _getModeOptionsFromData({bool isAccountReports = false}) {
+    // Always include 'All' as first option
+    final List<String> modeOptions = ['All'];
+    
+    // Get data source - use _allData to show all available modes
+    final dataSource = _allData;
+    
+    if (dataSource.isEmpty) {
+      debugPrint('⚠️ [MODE DROPDOWN] No data available, showing only "All"');
+      return modeOptions;
+    }
+    
+    // Extract unique modes from actual transaction data
+    final Set<String> uniqueModes = {};
+    
+    debugPrint('🔍 [MODE DROPDOWN] Extracting modes from ${dataSource.length} items');
+    
+    for (var item in dataSource) {
+      String? itemMode;
+      
+      // Try multiple fields for mode
+      if (item['mode'] != null) {
+        itemMode = item['mode'].toString().trim();
+      } else if (item['paymentMode'] != null) {
+        if (item['paymentMode'] is Map) {
+          itemMode = (item['paymentMode'] as Map)['name']?.toString().trim() ?? 
+                     (item['paymentMode'] as Map)['modeName']?.toString().trim();
+        } else {
+          itemMode = item['paymentMode'].toString().trim();
+        }
+      }
+      
+      if (itemMode != null && itemMode.isNotEmpty) {
+        uniqueModes.add(itemMode);
+      }
+    }
+    
+    // Sort mode names alphabetically
+    final List<String> sortedModes = uniqueModes.toList()..sort();
+    
+    debugPrint('📋 [MODE DROPDOWN] Found ${sortedModes.length} unique modes from data: $sortedModes');
+    
+    // Add all unique modes to dropdown
+    modeOptions.addAll(sortedModes);
+    
+    debugPrint('✅ [MODE DROPDOWN] Final mode options from data: $modeOptions');
+    return modeOptions;
+  }
+
+  /// Get mode options from payment modes database (all active modes)
   List<String> _getActiveModeOptions({bool isAccountReports = false}) {
     // Always include 'All' as first option
     final List<String> activeModes = ['All'];
@@ -774,6 +842,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     // Apply initial filters if provided
     if (widget.initialSelectedItem != null) {
       _selectedItem = widget.initialSelectedItem!;
+    } else {
+      // For non-wallet users, default to All User Wallets view
+      _checkAndSetDefaultForNonWalletUser();
     }
     if (widget.initialSelectedType != null) {
       filterProvider.setType(widget.initialSelectedType);
@@ -849,15 +920,42 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     }
   }
 
+  /// Check if user is non-wallet user and set default view to All User Wallets
+  Future<void> _checkAndSetDefaultForNonWalletUser() async {
+    try {
+      final isNonWallet = await AuthService.isNonWalletUser();
+      final userRole = await AuthService.getUserRole();
+      
+      // Only apply default for non-wallet users (not SuperAdmin)
+      // And only if no initialSelectedItem was provided
+      if (isNonWallet && 
+          userRole != 'SuperAdmin' && 
+          userRole != 'Super Admin' &&
+          widget.initialSelectedItem == null) {
+        if (mounted) {
+          setState(() {
+            _selectedItem = NavItem.walletAll; // Default to All User Wallets
+          });
+        }
+      }
+    } catch (e) {
+      print('Error checking non-wallet user for default view: $e');
+    }
+  }
+
   /// Load menu permissions and update state
   Future<void> _loadMenuPermissions() async {
     try {
+      // Check if user is non-wallet user
+      final isNonWallet = await AuthService.isNonWalletUser();
+      
       // Check if user is Super Admin first
       final isSuperAdmin = await UIPermissionChecker.isSuperAdmin();
       
       // Load individual menu item permissions
-      final canViewDashboard = await UIPermissionChecker.canViewMenuItem('dashboard');
-      final canViewWalletSelf = await UIPermissionChecker.canViewMenuItem('walletSelf');
+      // For non-wallet users, dashboard and walletSelf should be false
+      final canViewDashboard = isNonWallet ? false : await UIPermissionChecker.canViewMenuItem('dashboard');
+      final canViewWalletSelf = isNonWallet ? false : await UIPermissionChecker.canViewMenuItem('walletSelf');
       final canViewWalletAll = await UIPermissionChecker.canViewMenuItem('walletAll');
       final canViewWalletOverview = await UIPermissionChecker.canViewMenuItem('walletOverview');
       
@@ -883,6 +981,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       final canViewUsersMenu = await UIPermissionChecker.canViewUsersMenu();
       final canViewPaymentAccountsMenu = await UIPermissionChecker.canViewPaymentAccountsMenu();
       final canViewExpensesMenu = await UIPermissionChecker.canViewExpensesMenu();
+      final canViewSettingsMenu = await UIPermissionChecker.canViewSettingsMenu();
       
       // Load Quick Actions permission - check for enable permission
       final canEnableQuickActions = await UIPermissionChecker.hasPermission('dashboard.quick_actions.enable') ||
@@ -891,6 +990,15 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       // Load Add Amount and Withdraw permissions
       final canAddAmount = await UIPermissionChecker.hasPermission('dashboard.quick_actions.add_amount');
       final canWithdraw = await UIPermissionChecker.hasPermission('dashboard.quick_actions.withdraw');
+      
+      // Load Flagged Financial Flow permission
+      final canViewFlaggedFinancialFlow = await UIPermissionChecker.hasPermission('dashboard.flagged_financial_flow.enable') ||
+                                          await UIPermissionChecker.hasPermission('dashboard.flagged_financial_flow');
+      
+      // Load Status Count Table permission
+      final canViewStatusCountTable = await UIPermissionChecker.hasPermission('dashboard.status_count.view') ||
+                                      await UIPermissionChecker.hasPermission('dashboard.status_count.enable') ||
+                                      await UIPermissionChecker.hasPermission('dashboard.status_count');
       
       // Load Self Wallet sub-permissions
       final canViewSelfWalletTransaction = await PermissionActionChecker.canView('wallet.self.transaction');
@@ -963,6 +1071,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       final canFlagReportExpenses = await PermissionActionChecker.canFlag('wallet.report.expenses') ||
                                     await PermissionActionChecker.canFlag('wallet.all.expenses');
       
+      // Load All User Wallets action permissions (top-level)
+      final canAddExpenseAll = await UIPermissionChecker.hasPermission('wallet.all.add_expense');
+      final canAddAmountAll = await UIPermissionChecker.hasPermission('wallet.all.add_amount');
+      final canAddCollectionAll = await UIPermissionChecker.hasPermission('wallet.all.add_collection');
+      final canAddTransactionAll = await UIPermissionChecker.hasPermission('wallet.all.add_transaction');
+      final canWithdrawAll = await UIPermissionChecker.hasPermission('wallet.all.withdraw');
+      
       // Debug logging for All Wallet Report permissions
       if (isSuperAdmin) {
         debugPrint('🔐 [PERMISSIONS] All Wallet Report - SuperAdmin: All permissions enabled');
@@ -993,6 +1108,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       
       if (mounted) {
         setState(() {
+          _isNonWalletUser = isNonWallet;
           _canViewDashboard = canViewDashboard;
           _canViewWalletSelf = canViewWalletSelf;
           _canViewWalletAll = canViewWalletAll;
@@ -1009,9 +1125,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           _canViewUsersMenu = canViewUsersMenu;
           _canViewPaymentAccountsMenu = canViewPaymentAccountsMenu;
           _canViewExpensesMenu = canViewExpensesMenu;
+          _canViewSettingsMenu = canViewSettingsMenu;
           _canEnableQuickActions = canEnableQuickActions;
           _canAddAmount = canAddAmount;
           _canWithdraw = canWithdraw;
+          _canViewFlaggedFinancialFlow = canViewFlaggedFinancialFlow;
+          _canViewStatusCountTable = canViewStatusCountTable;
           _isSuperAdmin = isSuperAdmin;
           _canViewSelfWalletTransaction = canViewSelfWalletTransaction;
           _canViewSelfWalletCollection = canViewSelfWalletCollection;
@@ -1064,6 +1183,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           _canDeleteReportExpenses = canDeleteReportExpenses;
           _canRejectReportExpenses = canRejectReportExpenses;
           _canFlagReportExpenses = canFlagReportExpenses;
+          
+          // Set All User Wallets action permissions (top-level)
+          _canAddExpenseAll = canAddExpenseAll;
+          _canAddAmountAll = canAddAmountAll;
+          _canAddCollectionAll = canAddCollectionAll;
+          _canAddTransactionAll = canAddTransactionAll;
+          _canWithdrawAll = canWithdrawAll;
           
           _permissionsLoaded = true;
         });
@@ -1137,6 +1263,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           _canDeleteReportExpenses = true;
           _canRejectReportExpenses = true;
           _canFlagReportExpenses = true;
+          
+          // Set All User Wallets action permissions to true for SuperAdmin
+          _canAddExpenseAll = true;
+          _canAddAmountAll = true;
+          _canAddCollectionAll = true;
+          _canAddTransactionAll = true;
+          _canWithdrawAll = true;
           
           _permissionsLoaded = true;
         });
@@ -1464,10 +1597,29 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     final bool isSelfWallet = _selectedItem == NavItem.walletSelf;
     final bool isDashboard = _selectedItem == NavItem.dashboard;
     
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('💰 [LOAD SUMMARY] _loadUserFinancialSummary() - START');
+    debugPrint('   _isExpenseReportMode=$_isExpenseReportMode');
+    debugPrint('   _selectedItem=$_selectedItem');
+    debugPrint('   Current values BEFORE:');
+    debugPrint('      _cashIn=$_cashIn, _cashOut=$_cashOut, _balance=$_balance');
+    debugPrint('      _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
+    
     // Early return: Don't run this function at all if in Self Wallet mode
     // _loadFinancialData() handles the values for Self Wallet
     if (isSelfWallet) {
       debugPrint('[SELF WALLET] ⏭️  Skipping _loadUserFinancialSummary() - Self Wallet mode');
+      debugPrint('💰 [LOAD SUMMARY] _loadUserFinancialSummary() - END (skipped)');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      return;
+    }
+    
+    // Early return: Don't run this function if in Expense Report mode
+    // _loadFinancialData() handles the values for Expense Report (calculates from filtered expenses)
+    if (_isExpenseReportMode) {
+      debugPrint('[EXPENSE REPORT] ⏭️  Skipping _loadUserFinancialSummary() - Expense Report mode (values managed by _loadFinancialData)');
+      debugPrint('💰 [LOAD SUMMARY] _loadUserFinancialSummary() - END (skipped)');
+      debugPrint('═══════════════════════════════════════════════════════════');
       return;
     }
     
@@ -1586,6 +1738,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             }
             _isLoadingFinancialSummary = false;
           });
+          debugPrint('💰 [LOAD SUMMARY] _loadUserFinancialSummary() - END');
+          debugPrint('═══════════════════════════════════════════════════════════');
         }
       } else {
         // Fallback to wallet if summary fails
@@ -1888,7 +2042,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           return true;
         }).toList();
         
-        print('🚩 [FLAGGED ITEMS] ✅ After filtering resubmitted items: ${filteredItems.length} timeline items');
+        // Safe debug logging
+        try {
+          debugPrint('🚩 [FLAGGED ITEMS] ✅ After filtering resubmitted items: ${filteredItems.length} timeline items');
+        } catch (e) {
+          // Ignore debug errors
+        }
         
         if (mounted) {
           setState(() {
@@ -2008,6 +2167,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     _remarkController.dispose();
     _expenseAmountController.dispose();
     _expenseDescriptionController.dispose();
+    _expenseRemarkController.dispose();
     _collectionCustomerNameController.dispose();
     _collectionAmountController.dispose();
     _collectionNotesController.dispose();
@@ -2042,67 +2202,106 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
   /// Callback when FilterProvider changes - auto-refresh All Wallet Report
   void _onFilterChanged() {
+    final bool isAllWalletReport = _selectedItem == NavItem.walletOverview;
+    final bool isSelfWallet = _selectedItem == NavItem.walletSelf;
+    
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('📊 [FILTER CHANGED] FilterProvider changed detected');
+    debugPrint('   Current screen: $_selectedItem');
+    debugPrint('   Is walletOverview: $isAllWalletReport');
+    debugPrint('   Is walletSelf: $isSelfWallet');
+    debugPrint('   Is mounted: $mounted');
+    debugPrint('   _isApplyingFilters: $_isApplyingFilters');
+    debugPrint('   _isLoadingFinancialData: $_isLoadingFinancialData');
+    
     // Prevent recursive calls - if _applyFilters is running, ignore filter changes
     if (_isApplyingFilters) {
+      debugPrint('   ⚠️  BLOCKED: _isApplyingFilters is true - skipping API reload');
+      if (isSelfWallet) {
+        debugPrint('   [SELF WALLET] Will wait for _applyFilters to complete');
+      }
+      debugPrint('═══════════════════════════════════════════════════════════');
       return;
     }
     
     // Prevent multiple concurrent API calls - if already loading, skip
     if (_isLoadingFinancialData) {
+      debugPrint('   ⚠️  BLOCKED: _isLoadingFinancialData is true - already loading data');
+      if (isSelfWallet) {
+        debugPrint('   [SELF WALLET] API call already in progress, skipping duplicate call');
+      }
+      debugPrint('═══════════════════════════════════════════════════════════');
       return;
     }
-    
-    final bool isAllWalletReport = _selectedItem == NavItem.walletOverview;
-    final bool isSelfWallet = _selectedItem == NavItem.walletSelf;
-    
-    print('📊 [FILTER CHANGED] FilterProvider changed detected');
-    print('   Current screen: $_selectedItem');
-    print('   Is walletOverview: $isAllWalletReport');
-    print('   Is walletSelf: $isSelfWallet');
-    print('   Is mounted: $mounted');
     
     // Refresh if currently viewing All Wallet Report OR Self Wallet
     if ((isAllWalletReport || isSelfWallet) && mounted) {
       if (isAllWalletReport) {
-        print('📊 [ALL WALLET REPORTS] Conditions met - scheduling refresh...');
+        debugPrint('📊 [ALL WALLET REPORTS] Conditions met - scheduling refresh...');
       } else {
-        print('📊 [SELF WALLET] Conditions met - scheduling refresh...');
+        debugPrint('📊 [SELF WALLET] ✅ Conditions met - scheduling API reload...');
+        final filterProvider = _filterProvider;
+        debugPrint('   Active filters:');
+        debugPrint('     - Type: ${filterProvider.selectedType ?? "All"}');
+        debugPrint('     - Status: ${filterProvider.selectedStatus ?? "All"}');
+        debugPrint('     - Mode: ${filterProvider.selectedMode ?? "All"}');
+        debugPrint('     - Date Range: ${filterProvider.startDate} to ${filterProvider.endDate}');
       }
       
       // Use separate timer for filter changes to avoid conflicts with _applyFilters debounce
       // Increased delay to debounce multiple rapid filter changes
       _filterChangeTimer?.cancel();
+      debugPrint('   ⏱️  Starting 800ms debounce timer for API reload...');
       _filterChangeTimer = Timer(const Duration(milliseconds: 800), () {
         // Triple-check that we're still in the right state before loading
         final bool stillAllWalletReport = _selectedItem == NavItem.walletOverview;
         final bool stillSelfWallet = _selectedItem == NavItem.walletSelf;
+        
+        debugPrint('   ⏱️  Timer fired - checking conditions...');
+        debugPrint('     - stillAllWalletReport: $stillAllWalletReport');
+        debugPrint('     - stillSelfWallet: $stillSelfWallet');
+        debugPrint('     - mounted: $mounted');
+        debugPrint('     - _isApplyingFilters: $_isApplyingFilters');
+        debugPrint('     - _isLoadingFinancialData: $_isLoadingFinancialData');
         
         if (mounted && 
             (stillAllWalletReport || stillSelfWallet) && 
             !_isApplyingFilters && 
             !_isLoadingFinancialData) {
           if (stillAllWalletReport) {
-            print('📊 [ALL WALLET REPORTS] Filter changed - auto-refreshing data...');
+            debugPrint('📊 [ALL WALLET REPORTS] ✅ Triggering API reload...');
             _loadFinancialData(forceRefresh: true, isSelfWallet: false);
           } else if (stillSelfWallet) {
-            print('📊 [SELF WALLET] Filter changed - auto-refreshing data...');
+            debugPrint('═══════════════════════════════════════════════════════════');
+            debugPrint('📊 [SELF WALLET] ✅ ALL CONDITIONS MET - TRIGGERING API RELOAD');
+            debugPrint('   Calling _loadFinancialData(forceRefresh: true, isSelfWallet: true)');
+            debugPrint('═══════════════════════════════════════════════════════════');
             _loadFinancialData(forceRefresh: true, isSelfWallet: true);
           }
         } else {
           if (stillAllWalletReport) {
-            print('📊 [ALL WALLET REPORTS] Skipping refresh - screen changed, unmounted, applying filters, or already loading');
+            debugPrint('📊 [ALL WALLET REPORTS] ❌ Skipping refresh - conditions not met');
+            debugPrint('   Reason: screen changed, unmounted, applying filters, or already loading');
           } else if (stillSelfWallet) {
-            print('📊 [SELF WALLET] Skipping refresh - screen changed, unmounted, applying filters, or already loading');
+            debugPrint('═══════════════════════════════════════════════════════════');
+            debugPrint('📊 [SELF WALLET] ❌ SKIPPING API RELOAD - CONDITIONS NOT MET');
+            if (!mounted) debugPrint('   Reason: Widget not mounted');
+            if (!stillSelfWallet) debugPrint('   Reason: Screen changed (no longer Self Wallet)');
+            if (_isApplyingFilters) debugPrint('   Reason: _isApplyingFilters is true');
+            if (_isLoadingFinancialData) debugPrint('   Reason: _isLoadingFinancialData is true');
+            debugPrint('═══════════════════════════════════════════════════════════');
           }
         }
       });
     } else {
       if (isAllWalletReport) {
-        print('📊 [ALL WALLET REPORTS] Skipping refresh - not on All Wallet Report screen');
+        debugPrint('📊 [ALL WALLET REPORTS] Skipping refresh - not on All Wallet Report screen');
       } else if (isSelfWallet) {
-        print('📊 [SELF WALLET] Skipping refresh - not on Self Wallet screen');
+        debugPrint('📊 [SELF WALLET] Skipping refresh - not on Self Wallet screen or not mounted');
+        debugPrint('   mounted: $mounted');
       }
     }
+    debugPrint('═══════════════════════════════════════════════════════════');
   }
 
   Future<void> _initializeSocket() async {
@@ -3072,6 +3271,20 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         };
           }
         }
+      } else if (_isExpenseReportMode) {
+        // Expense Report Mode: Skip wallet report API call
+        // Expense report uses its own API endpoint (getExpenseReportScreenData)
+        debugPrint('📊 [EXPENSE REPORT] Skipping getAllWalletReport API call - using expense report API instead');
+        reportResult = {
+          'success': true,
+          'data': <Map<String, dynamic>>[],
+          'summary': <String, dynamic>{
+            'cashIn': 0.0,
+            'cashOut': 0.0,
+            'balance': 0.0,
+          },
+        };
+        reportLoaded = true;
       } else {
         // All Wallet Report or Account Reports: Use AllWalletReportsService (same as standalone screen)
         Map<String, dynamic> allWalletReportResult;
@@ -3501,7 +3714,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
         // Transform expense data in reportData if needed
         // If in expense report mode, filter to expenses only
-        final transformedReportData = reportData.map((item) {
+        var transformedReportData = reportData.map((item) {
           // Ensure item is a proper Dart Map, not a JavaScript object
           final Map<String, dynamic> itemMap = item is Map<String, dynamic>
               ? Map<String, dynamic>.from(item)
@@ -3704,6 +3917,53 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           return true;
         }).toList();
 
+        // Remove duplicate entries: If WalletTransaction has relatedId pointing to Transaction,
+        // hide the WalletTransaction and show only the Transaction
+        if (isSelfWallet) {
+          final Set<String> transactionIds = {};
+          final Set<String> walletTransactionIdsToRemove = {};
+          
+          // First pass: Collect all Transaction IDs
+          for (var item in transformedReportData) {
+            if (item['type'] == 'Transactions') {
+              final transactionId = item['id']?.toString() ?? item['_id']?.toString();
+              if (transactionId != null && transactionId.isNotEmpty) {
+                transactionIds.add(transactionId);
+              }
+            }
+          }
+          
+          // Second pass: Find WalletTransactions that have relatedId matching Transaction IDs
+          for (var item in transformedReportData) {
+            final itemType = item['type']?.toString() ?? '';
+            final relatedId = item['relatedId']?.toString();
+            final relatedModel = item['relatedModel']?.toString();
+            
+            // If this is a WalletTransaction with relatedId pointing to a Transaction
+            if ((itemType == 'Add Amount' || itemType == 'Withdraw' || itemType == 'WalletTransactions') &&
+                relatedId != null && 
+                relatedModel == 'Transaction' &&
+                transactionIds.contains(relatedId)) {
+              // Mark this WalletTransaction for removal
+              final walletTransactionId = item['id']?.toString() ?? item['_id']?.toString();
+              if (walletTransactionId != null && walletTransactionId.isNotEmpty) {
+                walletTransactionIdsToRemove.add(walletTransactionId);
+                debugPrint('[SELF WALLET] 🔄 Removing duplicate WalletTransaction (ID: $walletTransactionId) - related to Transaction (ID: $relatedId)');
+              }
+            }
+          }
+          
+          // Remove WalletTransactions that are duplicates of Transactions
+          if (walletTransactionIdsToRemove.isNotEmpty) {
+            final beforeCount = transformedReportData.length;
+            transformedReportData = transformedReportData.where((item) {
+              final itemId = item['id']?.toString() ?? item['_id']?.toString();
+              return itemId == null || !walletTransactionIdsToRemove.contains(itemId);
+            }).toList();
+            debugPrint('[SELF WALLET] 🔄 Removed ${beforeCount - transformedReportData.length} duplicate WalletTransactions (kept Transaction entries)');
+          }
+        }
+
         if (mounted) {
           // For Self Wallet: Remove dummy data if all values are zero
           List<Map<String, dynamic>> processedReportData = List<Map<String, dynamic>>.from(transformedReportData);
@@ -3738,9 +3998,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             debugPrint('[SELF WALLET]    finalBalance: $finalBalance');
           }
           
-          if (!isSelfWallet) {
+          if (!isSelfWallet && !_isExpenseReportMode) {
             // All Wallet Report: Use values from AllWalletReportsService API response
             // Values are already parsed from summaryRaw above (summaryCashIn, summaryCashOut, summaryBalance)
+            // SKIP for Expense Report Mode - expense report calculates its own values
             finalCashIn = summaryCashIn;
             finalCashOut = summaryCashOut;
             finalBalance = summaryBalance;
@@ -3750,6 +4011,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             print('   CashIn: $finalCashIn');
             print('   CashOut: $finalCashOut');
             print('   Balance: $finalBalance');
+          } else if (_isExpenseReportMode) {
+            // Expense Report Mode: Don't set values here - they're calculated from expenses in _calculateFinancialSummary
+            debugPrint('📊 [EXPENSE REPORT] Skipping All Wallet Report value assignment - will calculate from expenses');
+            // Keep existing values (they'll be updated by _calculateFinancialSummary)
+            finalCashIn = _cashIn;
+            finalCashOut = _cashOut;
+            finalBalance = _balance;
             
             // For All Wallet Report and Account Reports: Store values but don't setState yet if we're fetching detailed data
             // This prevents flickering - we'll update everything together after detailed data is loaded
@@ -4070,24 +4338,52 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       // CRITICAL: For Self Wallet, always use currentUserId (ignore user filter)
       // For other views, use null (show all users) unless explicitly filtered
       
-      // If in expense report mode, load only expenses
+      // If in expense report mode, load only expenses using expense report screen API
       debugPrint('🔍 [DEBUG] _loadFinancialData - _isExpenseReportMode: $_isExpenseReportMode, _selectedItem: $_selectedItem');
       if (_isExpenseReportMode) {
         debugPrint('═══════════════════════════════════════════════════════════');
-        debugPrint('📊 [EXPENSE REPORT] Loading expenses from backend...');
+        debugPrint('📊 [EXPENSE REPORT] Loading expenses from backend API with date filters...');
         debugPrint('   Mode: Expense Report Only');
         debugPrint('   isSelfWallet: $isSelfWallet');
         
         final targetUserId = isSelfWallet ? currentUserId : (userIdsForDetailedData != null && userIdsForDetailedData.length == 1 ? userIdsForDetailedData.first : null);
         debugPrint('   Target User ID: ${targetUserId ?? "All Users"}');
         debugPrint('   Status Filter: ${filterProvider.selectedStatus ?? "All"}');
-        debugPrint('   Mode Filter: ${filterProvider.selectedMode ?? "All"}');
+        debugPrint('   Category Filter: ${_selectedExpenseTypeCategory ?? "All"}');
         debugPrint('   Date Range: ${filterProvider.startDate?.toString() ?? "No start"} to ${filterProvider.endDate?.toString() ?? "No end"}');
         
-        final expensesResult = await ExpenseService.getExpenses(
+        // Format dates for API (yyyy-MM-dd format)
+        String? fromDateStr;
+        String? toDateStr;
+        if (filterProvider.startDate != null) {
+          fromDateStr = '${filterProvider.startDate!.year}-${filterProvider.startDate!.month.toString().padLeft(2, '0')}-${filterProvider.startDate!.day.toString().padLeft(2, '0')}';
+        }
+        if (filterProvider.endDate != null) {
+          toDateStr = '${filterProvider.endDate!.year}-${filterProvider.endDate!.month.toString().padLeft(2, '0')}-${filterProvider.endDate!.day.toString().padLeft(2, '0')}';
+        }
+        
+        // Map status filter to backend format
+        String? statusFilter;
+        if (filterProvider.selectedStatus != null && filterProvider.selectedStatus != 'All') {
+          // Map frontend status to backend format
+          if (filterProvider.selectedStatus == 'Approved') {
+            statusFilter = 'approved';
+          } else if (filterProvider.selectedStatus == 'Unapproved' || filterProvider.selectedStatus == 'Pending') {
+            statusFilter = 'unapproved';
+          } else if (filterProvider.selectedStatus == 'Flagged') {
+            statusFilter = 'flagged';
+          } else {
+            statusFilter = filterProvider.selectedStatus!.toLowerCase();
+          }
+        }
+        
+        // Load expense report data with date filters from backend
+        final expensesResult = await ExpenseService.getExpenseReportScreenData(
+          from: fromDateStr,
+          to: toDateStr,
+          status: statusFilter,
+          category: _selectedExpenseTypeCategory != null && _selectedExpenseTypeCategory != 'All' ? _selectedExpenseTypeCategory : null,
           userId: targetUserId,
-          status: filterProvider.selectedStatus,
-          mode: filterProvider.selectedMode,
         );
         
         debugPrint('   📥 [EXPENSE REPORT] Backend response received');
@@ -4095,35 +4391,17 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         
         if (expensesResult['success'] == true) {
           final expenses = expensesResult['expenses'] as List<dynamic>? ?? [];
-          debugPrint('   Raw expenses from backend: ${expenses.length} items');
+          final summary = expensesResult['summary'] as Map<String, dynamic>? ?? {};
+          debugPrint('   Expenses from backend (already filtered by date): ${expenses.length} items');
+          debugPrint('   Summary from backend: $summary');
           
-          // Apply date filtering client-side if date filters are set
-          final filteredExpenses = (filterProvider.startDate != null || filterProvider.endDate != null)
-              ? expenses.where((e) {
-                  try {
-                    final itemDate = e['date'] != null 
-                        ? DateTime.parse(e['date'].toString()).toLocal()
-                        : (e['createdAt'] != null 
-                            ? DateTime.parse(e['createdAt'].toString()).toLocal()
-                            : null);
-                    if (itemDate == null) return false;
-                    if (filterProvider.startDate != null && itemDate.isBefore(filterProvider.startDate!)) return false;
-                    if (filterProvider.endDate != null && itemDate.isAfter(filterProvider.endDate!.add(const Duration(days: 1)))) return false;
-                    return true;
-                  } catch (e) {
-                    return false;
-                  }
-                }).toList()
-              : expenses;
-          
-          debugPrint('   After date filtering: ${filteredExpenses.length} items');
-          
-          final processedExpenses = filteredExpenses.map((e) {
+          // Process expenses for display
+          final processedExpenses = expenses.map((e) {
             final amount = _parseAmount(e['amount']);
             // Get created by person name
             final createdByName = e['createdBy'] is Map 
                 ? (e['createdBy']?['name'] ?? 'Unknown')
-                : 'Unknown';
+                : (e['createdByName']?.toString() ?? 'Unknown');
             // Get expense category name
             final categoryName = e['category']?.toString() ?? 'Unknown';
             return {
@@ -4138,8 +4416,57 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           }).toList();
           
           allData.addAll(processedExpenses);
+          
           debugPrint('   ✅ [EXPENSE REPORT] Added ${processedExpenses.length} expenses to allData');
           debugPrint('   Total allData count: ${allData.length}');
+          
+          // Update breakdown from backend summary
+          if (summary.isNotEmpty) {
+            final byStatus = summary['byStatus'] as Map<String, dynamic>? ?? {};
+            final approvedData = byStatus['approved'] as Map<String, dynamic>? ?? {};
+            final unapprovedData = byStatus['unapproved'] as Map<String, dynamic>? ?? {};
+            final flaggedData = byStatus['flagged'] as Map<String, dynamic>? ?? {};
+            
+            debugPrint('   📊 [EXPENSE REPORT] Updating breakdown from backend summary:');
+            debugPrint('     Approved: count=${approvedData['count']}, amount=${approvedData['amount']}');
+            debugPrint('     Unapproved: count=${unapprovedData['count']}, amount=${unapprovedData['amount']}');
+            debugPrint('     Flagged: count=${flaggedData['count']}, amount=${flaggedData['amount']}');
+            
+            // Update filter breakdown with backend summary data
+            setState(() {
+              _filterBreakdown = {
+                'Expenses': {
+                  'Approved': {
+                    'count': (approvedData['count'] ?? 0).toInt(),
+                    'amount': _parseAmount(approvedData['amount'] ?? 0),
+                  },
+                  'Unapproved': {
+                    'count': (unapprovedData['count'] ?? 0).toInt(),
+                    'amount': _parseAmount(unapprovedData['amount'] ?? 0),
+                  },
+                  'Flagged': {
+                    'count': (flaggedData['count'] ?? 0).toInt(),
+                    'amount': _parseAmount(flaggedData['amount'] ?? 0),
+                  },
+                  'Rejected': {
+                    'count': 0,
+                    'amount': 0.0,
+                  },
+                },
+                'Transactions': _filterBreakdown['Transactions'] ?? {},
+                'Collections': _filterBreakdown['Collections'] ?? {},
+              };
+            });
+          } else {
+            debugPrint('   ⚠️ [EXPENSE REPORT] No summary data from backend');
+          }
+          
+          // Calculate cash in/out/balance from loaded expenses
+          debugPrint('   💰 [EXPENSE REPORT] Calling _calculateFinancialSummary() to calculate cash flow...');
+          debugPrint('   💰 [EXPENSE REPORT] Before calculation: _cashIn=$_cashIn, _cashOut=$_cashOut, _balance=$_balance');
+          debugPrint('   💰 [EXPENSE REPORT] Processed expenses count: ${processedExpenses.length}');
+          _calculateFinancialSummary(data: processedExpenses);
+          debugPrint('   💰 [EXPENSE REPORT] After _calculateFinancialSummary: _cashIn=$_cashIn, _cashOut=$_cashOut, _balance=$_balance');
           debugPrint('═══════════════════════════════════════════════════════════');
         } else {
           debugPrint('   ❌ [EXPENSE REPORT] Failed to load expenses');
@@ -5738,16 +6065,17 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   // Helper: Check if expense/item is approved (including Flagged with approvedBy)
   bool _isItemApproved(dynamic item) {
     final status = item['status']?.toString() ?? '';
+    final statusLower = status.toLowerCase(); // Normalize to lowercase for case-insensitive comparison
     final approvedBy = item['approvedBy'];
     final type = item['type']?.toString() ?? '';
     
-    // For Expenses and Transactions: Check if explicitly approved
+    // For Expenses and Transactions: Check if explicitly approved (case-insensitive)
     if (type == 'Expenses' || type == 'Transactions') {
-      if (status == 'Approved' || status == 'Completed') {
+      if (statusLower == 'approved' || statusLower == 'completed') {
         return true;
       }
       // Check if Flagged but has approvedBy (approved Flagged item)
-      if (status == 'Flagged' && approvedBy != null) {
+      if (statusLower == 'flagged' && approvedBy != null) {
         // Check if approvedBy is not empty (could be object or string)
         if (approvedBy is Map && approvedBy.isNotEmpty) {
           return true;
@@ -5758,12 +6086,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         }
       }
     } else if (type == 'Collections') {
-      // For Collections: Check if verified/accounted/approved
-      if (status == 'Verified' || status == 'Accounted' || status == 'Approved') {
+      // For Collections: Check if verified/accounted/approved (case-insensitive)
+      if (statusLower == 'verified' || statusLower == 'accounted' || statusLower == 'approved') {
         return true;
       }
       // Check if Flagged but has approvedBy (approved Flagged collection)
-      if (status == 'Flagged' && approvedBy != null) {
+      if (statusLower == 'flagged' && approvedBy != null) {
         if (approvedBy is Map && approvedBy.isNotEmpty) {
           return true;
         } else if (approvedBy is String && approvedBy.isNotEmpty) {
@@ -6009,8 +6337,15 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     
     // For Expense Report Mode: Only calculate from expenses
     if (_isExpenseReportMode) {
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('💰 [EXPENSE REPORT] _calculateFinancialSummary() - START');
+      debugPrint('   Source data count: ${source.length}');
+      debugPrint('   _selectedItem: $_selectedItem');
+      debugPrint('   _isExpenseReportMode: $_isExpenseReportMode');
+      
       // Filter to only expenses
       source = source.where((item) => item['type']?.toString() == 'Expenses').toList();
+      debugPrint('   After filtering to Expenses: ${source.length} items');
       
       double cashIn = 0.0; // Reimbursements (if any)
       double cashOut = 0.0; // Expenses are money going out
@@ -6019,39 +6354,83 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       String? currentUserId;
       if (_selectedItem == NavItem.walletSelf) {
         currentUserId = await AuthService.getUserId();
+        debugPrint('   Current User ID: $currentUserId');
       }
+      
+      debugPrint('   Processing ${source.length} expense items...');
+      int approvedCount = 0;
+      int unapprovedCount = 0;
       
       // Calculate only from approved expenses (including Flagged with approvedBy)
       for (var item in source) {
         final amount = _parseAmount(item['amount']);
+        final status = item['status']?.toString() ?? 'Unknown';
+        final statusLower = status.toLowerCase();
+        final isApproved = _isItemApproved(item);
         
-        if (_isItemApproved(item)) {
+        debugPrint('   Item: amount=$amount, status=$status (lowercase: $statusLower), isApproved=$isApproved');
+        
+        if (isApproved) {
+          approvedCount++;
           // In expense report: Approved expenses = Cash Out (money spent/paid)
           // For self wallet, only count expenses where user is owner
           if (_selectedItem == NavItem.walletSelf && currentUserId != null) {
             final expenseUserId = item['userId'] is Map
                 ? (item['userId']?['_id'] ?? item['userId']?['id'] ?? '').toString()
                 : (item['userId'] ?? '').toString();
+            debugPrint('     Expense User ID: $expenseUserId, Current User ID: $currentUserId');
             if (expenseUserId == currentUserId) {
               cashOut += amount; // Expense owner paid money (Cash Out)
+              debugPrint('     ✅ Added to cashOut: $amount (new total: $cashOut)');
+            } else {
+              debugPrint('     ⏭️ Skipped - expense belongs to different user');
             }
           } else {
             // For all accounts view, count all approved expenses as cash out (money spent)
             cashOut += amount;
+            debugPrint('     ✅ Added to cashOut: $amount (new total: $cashOut)');
           }
+        } else {
+          unapprovedCount++;
+          debugPrint('     ⏭️ Skipped - expense not approved');
         }
       }
       
+      debugPrint('   Summary:');
+      debugPrint('     Total items: ${source.length}');
+      debugPrint('     Approved: $approvedCount');
+      debugPrint('     Unapproved: $unapprovedCount');
+      debugPrint('     Cash In: $cashIn');
+      debugPrint('     Cash Out: $cashOut');
+      
       // Balance = Cash In - Cash Out (for expense report, typically negative or zero)
       final balance = cashIn - cashOut;
+      debugPrint('     Balance: $balance (Cash In - Cash Out)');
+      
+      debugPrint('   💰 [EXPENSE REPORT] BEFORE setState in _calculateFinancialSummary:');
+      debugPrint('      _cashIn=$_cashIn, _cashOut=$_cashOut, _balance=$_balance');
+      debugPrint('      _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
+      debugPrint('      Calculated values: cashIn=$cashIn, cashOut=$cashOut, balance=$balance');
       
       if (mounted) {
         setState(() {
           _cashIn = cashIn;
           _cashOut = cashOut;
           _balance = balance;
+          // Also update _user* variables for expense report display (UI uses these)
+          _userCashIn = cashIn;
+          _userCashOut = cashOut;
+          _userBalance = balance;
         });
+        debugPrint('   💰 [EXPENSE REPORT] AFTER setState in _calculateFinancialSummary:');
+        debugPrint('      _cashIn=$_cashIn, _cashOut=$_cashOut, _balance=$_balance');
+        debugPrint('      _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
+      } else {
+        debugPrint('   ⚠️ Widget not mounted, skipping setState');
       }
+      
+      debugPrint('💰 [EXPENSE REPORT] _calculateFinancialSummary() - END');
+      debugPrint('═══════════════════════════════════════════════════════════');
       return;
     }
     
@@ -6199,6 +6578,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
     // Note: Status counts should come from backend API (_loadStatusCounts)
     // Do not recalculate here to avoid double counting
+    
+    // For Expense Report Mode: Breakdown comes from backend API, don't recalculate
+    if (_isExpenseReportMode) {
+      debugPrint('📊 [EXPENSE REPORT] Skipping client-side breakdown calculation - using backend summary');
+      return;
+    }
 
     final Map<String, Map<String, Map<String, num>>> updatedBreakdown = {
       'Expenses': {
@@ -6423,6 +6808,25 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     try {
       // Get FilterProvider for global filters
       final filterProvider = _filterProvider;
+
+      // Log for Self Wallet
+      if (_selectedItem == NavItem.walletSelf) {
+        debugPrint('═══════════════════════════════════════════════════════════');
+        debugPrint('🔍 [SELF WALLET] _applyFilters() - START');
+        debugPrint('   Total items in _allData: ${_allData.length}');
+        debugPrint('   Active Filters:');
+        debugPrint('     - Type: ${filterProvider.selectedType ?? "All"}');
+        debugPrint('     - Status: ${filterProvider.selectedStatus ?? "All"}');
+        debugPrint('     - Status Set: $_selectedStatusSet');
+        debugPrint('     - Mode: ${filterProvider.selectedMode ?? "All"}');
+        debugPrint('     - Start Date: ${filterProvider.startDate}');
+        debugPrint('     - End Date: ${filterProvider.endDate}');
+        debugPrint('     - Quick Range: ${filterProvider.selectedQuickRange}');
+        debugPrint('     - User IDs: ${filterProvider.selectedUserIds.length}');
+        debugPrint('   _isApplyingFilters: $_isApplyingFilters');
+        debugPrint('   _isLoadingFinancialData: $_isLoadingFinancialData');
+        debugPrint('═══════════════════════════════════════════════════════════');
+      }
 
       List<dynamic> filtered = List.from(_allData);
 
@@ -6722,12 +7126,18 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
       // Filter by type
       if (filterProvider.selectedType != null) {
+        final beforeCount = filtered.length;
         filtered = filtered.where((item) => item['type'] == filterProvider.selectedType).toList();
+        if (_selectedItem == NavItem.walletSelf) {
+          debugPrint('🔍 [SELF WALLET] Type filter applied: ${filterProvider.selectedType}');
+          debugPrint('   Items before: $beforeCount, after: ${filtered.length}');
+        }
       }
 
       // Filter by status (multi-select first)
       bool isFilteringForFlagged = false;
       if (_selectedStatusSet.isNotEmpty) {
+        final beforeCount = filtered.length;
         isFilteringForFlagged = _selectedStatusSet.contains('Flagged');
         filtered = filtered.where((item) {
           final String type = item['type']?.toString() ?? '';
@@ -6736,13 +7146,22 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             (selected) => _statusMatchesSelection(selected, status, type),
           );
         }).toList();
+        if (_selectedItem == NavItem.walletSelf) {
+          debugPrint('🔍 [SELF WALLET] Status filter applied (multi-select): $_selectedStatusSet');
+          debugPrint('   Items before: $beforeCount, after: ${filtered.length}');
+        }
       } else if (filterProvider.selectedStatus != null) {
+        final beforeCount = filtered.length;
         isFilteringForFlagged = filterProvider.selectedStatus == 'Flagged';
         filtered = filtered.where((item) {
           final String type = item['type']?.toString() ?? '';
           final String status = item['status']?.toString() ?? '';
           return _statusMatchesSelection(filterProvider.selectedStatus!, status, type);
         }).toList();
+        if (_selectedItem == NavItem.walletSelf) {
+          debugPrint('🔍 [SELF WALLET] Status filter applied: ${filterProvider.selectedStatus}');
+          debugPrint('   Items before: $beforeCount, after: ${filtered.length}');
+        }
       }
 
       // If filtering for Flagged status, merge flagged items from timeline
@@ -6829,22 +7248,55 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       }
       
       if (filterProvider.selectedMode != null) {
+        final beforeCount = filtered.length;
         filtered = filtered.where((item) {
-          final itemMode = item['mode']?.toString() ?? '';
-          final selectedMode = filterProvider.selectedMode!;
+          // Try multiple fields for mode: mode, paymentMode (object), paymentMode.name
+          String? itemMode;
+          
+          // First try direct 'mode' field
+          if (item['mode'] != null) {
+            itemMode = item['mode'].toString().trim();
+          }
+          // If mode is an object, try to get name from it
+          else if (item['paymentMode'] != null) {
+            if (item['paymentMode'] is Map) {
+              itemMode = (item['paymentMode'] as Map)['name']?.toString().trim();
+            } else {
+              itemMode = item['paymentMode'].toString().trim();
+            }
+          }
+          
+          if (itemMode == null || itemMode.isEmpty) {
+            if (_selectedItem == NavItem.walletSelf) {
+              debugPrint('   ⚠️  Item ${item['id']} has no mode field');
+            }
+            return false;
+          }
+          
+          final selectedMode = filterProvider.selectedMode!.trim();
+          final normalizedItemMode = itemMode.toLowerCase();
+          final normalizedSelectedMode = selectedMode.toLowerCase();
           
           // Handle specific payment mode names
           if (selectedMode == 'Sales UPI') {
-            return itemMode == 'UPI' && (item['name']?.toString().toLowerCase().contains('sales') ?? false);
+            return normalizedItemMode == 'upi' && (item['name']?.toString().toLowerCase().contains('sales') ?? false);
           } else if (selectedMode == 'Purchase UPI') {
-            return itemMode == 'UPI' && (item['name']?.toString().toLowerCase().contains('purchase') ?? false);
+            return normalizedItemMode == 'upi' && (item['name']?.toString().toLowerCase().contains('purchase') ?? false);
           } else if (selectedMode == 'Bank Transfer') {
-            return itemMode == 'Bank';
+            return normalizedItemMode == 'bank';
           } else {
-            // Direct mode match for Cash, UPI, Bank
-            return itemMode == selectedMode;
+            // Direct mode match (case-insensitive) for Cash, UPI, Bank, online, etc.
+            final matches = normalizedItemMode == normalizedSelectedMode;
+            if (_selectedItem == NavItem.walletSelf && !matches) {
+              debugPrint('   ❌ Item ${item['id']} mode mismatch: itemMode="$itemMode" (normalized: "$normalizedItemMode") vs selected="$selectedMode" (normalized: "$normalizedSelectedMode")');
+            }
+            return matches;
           }
         }).toList();
+        if (_selectedItem == NavItem.walletSelf) {
+          debugPrint('🔍 [SELF WALLET] Mode filter applied: ${filterProvider.selectedMode}');
+          debugPrint('   Items before: $beforeCount, after: ${filtered.length}');
+        }
       }
 
       // Filter by expense type category (ONLY for expense report)
@@ -6857,20 +7309,118 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
       // Filter by date range
       if (filterProvider.startDate != null || filterProvider.endDate != null) {
+        final beforeCount = filtered.length;
+        if (_selectedItem == NavItem.walletSelf && beforeCount > 0) {
+          debugPrint('🔍 [SELF WALLET] Date range filter - checking ${beforeCount} items');
+          debugPrint('   Filter range: ${filterProvider.startDate} to ${filterProvider.endDate}');
+          // Log first few items to see their date fields
+          for (int i = 0; i < (beforeCount > 3 ? 3 : beforeCount); i++) {
+            final item = filtered[i];
+            final dateField = item['date'];
+            final createdAtField = item['createdAt'];
+            debugPrint('   Item $i: date=$dateField, createdAt=$createdAtField, type=${item['type']}');
+          }
+        }
         filtered = filtered.where((item) {
           try {
-            final itemDate = item['date'] != null 
-                ? DateTime.parse(item['date'].toString()).toLocal()
-                : null;
-            if (itemDate == null) return false;
+            // Try multiple date field names in order of preference
+            dynamic dateValue = item['date'] ?? item['createdAt'] ?? item['dateTime'];
             
-            if (filterProvider.startDate != null && itemDate.isBefore(filterProvider.startDate!)) return false;
-            if (filterProvider.endDate != null && itemDate.isAfter(filterProvider.endDate!.add(const Duration(days: 1)))) return false;
+            if (dateValue == null) {
+              if (_selectedItem == NavItem.walletSelf) {
+                debugPrint('   ⚠️  Item ${item['id']} has no date field (checked: date, createdAt, dateTime)');
+              }
+              return false;
+            }
+            
+            DateTime? itemDate;
+            
+            // Handle different date formats
+            if (dateValue is DateTime) {
+              itemDate = dateValue.toLocal();
+            } else if (dateValue is String) {
+              try {
+                // Try parsing as ISO8601 first
+                itemDate = DateTime.parse(dateValue).toLocal();
+              } catch (e) {
+                // If ISO8601 fails, try other common formats
+                try {
+                  // Try parsing as "dd-MMM-yyyy" format
+                  final parts = dateValue.split('-');
+                  if (parts.length == 3) {
+                    final day = int.parse(parts[0]);
+                    final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    final month = monthNames.indexOf(parts[1]) + 1;
+                    final year = int.parse(parts[2].length == 2 ? '20${parts[2]}' : parts[2]);
+                    itemDate = DateTime(year, month, day).toLocal();
+                  } else {
+                    throw Exception('Unknown date format: $dateValue');
+                  }
+                } catch (e2) {
+                  if (_selectedItem == NavItem.walletSelf) {
+                    debugPrint('   ⚠️  Could not parse date "$dateValue" for item ${item['id']}: $e2');
+                  }
+                  return false;
+                }
+              }
+            } else {
+              if (_selectedItem == NavItem.walletSelf) {
+                debugPrint('   ⚠️  Item ${item['id']} date field is not DateTime or String: ${dateValue.runtimeType}');
+              }
+              return false;
+            }
+            
+            if (itemDate == null) {
+              return false;
+            }
+            
+            // Check start date: item must be on or after start date (start of day)
+            bool passesStartDate = true;
+            if (filterProvider.startDate != null) {
+              final startOfDay = DateTime(
+                filterProvider.startDate!.year,
+                filterProvider.startDate!.month,
+                filterProvider.startDate!.day,
+              );
+              passesStartDate = itemDate.isAfter(startOfDay.subtract(const Duration(seconds: 1)));
+            }
+            
+            // Check end date: item must be on or before end date (end of day = 23:59:59)
+            bool passesEndDate = true;
+            if (filterProvider.endDate != null) {
+              final endOfDay = DateTime(
+                filterProvider.endDate!.year,
+                filterProvider.endDate!.month,
+                filterProvider.endDate!.day,
+                23,
+                59,
+                59,
+              );
+              passesEndDate = itemDate.isBefore(endOfDay.add(const Duration(seconds: 1)));
+            }
+            
+            if (!passesStartDate || !passesEndDate) {
+              if (_selectedItem == NavItem.walletSelf) {
+                debugPrint('   ❌ Item ${item['id']} filtered out: date=$itemDate, passesStartDate=$passesStartDate, passesEndDate=$passesEndDate');
+              }
+              return false;
+            }
+            
+            if (_selectedItem == NavItem.walletSelf) {
+              debugPrint('   ✅ Item ${item['id']} passed date filter: date=$itemDate');
+            }
             return true;
           } catch (e) {
+            if (_selectedItem == NavItem.walletSelf) {
+              debugPrint('   ⚠️  Error parsing date for item ${item['id']}: $e');
+            }
             return false;
           }
         }).toList();
+        if (_selectedItem == NavItem.walletSelf) {
+          debugPrint('🔍 [SELF WALLET] Date range filter applied: ${filterProvider.startDate} to ${filterProvider.endDate}');
+          debugPrint('   Items before: $beforeCount, after: ${filtered.length}');
+        }
       }
 
       // For Self Wallet: Remove all dummy data when cash in, cash out, and balance are all zero
@@ -6898,10 +7448,16 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       // For Self Wallet and All Wallet Report: Skip financial summary calculation (API provides correct values)
       // For other views: Calculate financial summary from filtered data
       if (_selectedItem == NavItem.walletSelf) {
-        // Reduced verbosity - only log if in debug mode and values are unexpected
-        if (kDebugMode && (_userCashIn == 0.0 && _userCashOut == 0.0 && _userBalance == 0.0)) {
-          debugPrint('[SELF WALLET] 📋 _applyFilters() - Skipping _calculateFinancialSummary()');
-        }
+        debugPrint('═══════════════════════════════════════════════════════════');
+        debugPrint('🔍 [SELF WALLET] _applyFilters() - FILTERING COMPLETE');
+        debugPrint('   Final filtered items count: ${filtered.length}');
+        debugPrint('   _filteredData will be updated with ${filtered.length} items');
+        debugPrint('   ⚠️  NOTE: Only local data filtered. API reload should be triggered by _onFilterChanged()');
+        debugPrint('   Current state:');
+        debugPrint('     - _isApplyingFilters: $_isApplyingFilters');
+        debugPrint('     - _isLoadingFinancialData: $_isLoadingFinancialData');
+        debugPrint('     - mounted: $mounted');
+        debugPrint('═══════════════════════════════════════════════════════════');
       } else if (_selectedItem == NavItem.walletOverview) {
         // All Wallet Report: Skip financial summary calculation (API provides correct values)
         // Note: Do NOT trigger API reload here - the FilterProvider listener (_onFilterChanged) will handle it
@@ -7521,6 +8077,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     if (item == NavItem.expenseType) return 'Expenses Type';
     if (item == NavItem.expenseReport) return 'Expense Report';
     if (item == NavItem.smartApprovals) return 'Smart Approvals';
+    if (item == NavItem.collectionCustomField) return 'Collection Custom Field';
 
     return 'Dashboard';
   }
@@ -7568,6 +8125,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         return '/reports/expenses';
       case NavItem.smartApprovals:
         return '/approvals/smart';
+      case NavItem.collectionCustomField:
+        return '/settings/collection-custom-field';
     }
   }
 
@@ -7715,7 +8274,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     // Load dashboard data if switching to self wallet
     if (target == NavItem.walletSelf) {
       _loadDashboardData();
-      unawaited(_refreshSelfWalletView(force: true));
+      _refreshSelfWalletView(force: true); // Fire and forget
     }
   }
 
@@ -7830,8 +8389,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     // Build menu items list based on permissions
     final List<Widget> menuItems = [];
     
-    // Dashboard - always show if user has permission
-    if (_canViewDashboard) {
+    // Dashboard - only show if user has permission AND is not non-wallet user
+    if (_canViewDashboard && !_isNonWalletUser) {
       menuItems.add(
         _buildNavItem(
           icon: Icons.dashboard_outlined,
@@ -7853,7 +8412,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       debugPrint('   _canViewWalletAll=$_canViewWalletAll');
       debugPrint('   _canViewWalletOverview=$_canViewWalletOverview');
       
-      if (_canViewWalletSelf) {
+      // My Wallet - only show if user has permission AND is not non-wallet user
+      if (_canViewWalletSelf && !_isNonWalletUser) {
         walletChildren.add(
           _buildSubNavItem(
             title: SuperAdminMenuNames.walletSelf,
@@ -8089,6 +8649,38 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       }
     }
     
+    // Settings menu
+    if (_canViewSettingsMenu) {
+    final List<Widget> settingsChildren = [];
+    settingsChildren.add(
+      _buildSubNavItem(
+        title: 'Collection',
+          isSelected: _selectedItem == NavItem.collectionCustomField,
+        onTap: () {
+          setState(() {
+            _settingsExpanded = true;
+          });
+            _navigateToRoute(NavItem.collectionCustomField);
+        },
+      ),
+    );
+    
+    menuItems.add(
+      _buildExpandableNavItem(
+        icon: Icons.settings_outlined,
+        title: 'Settings',
+        isExpanded: _settingsExpanded,
+          hasSelectedChild: _selectedItem == NavItem.collectionCustomField,
+        onTap: () {
+          setState(() {
+            _settingsExpanded = true;
+          });
+        },
+        children: settingsChildren,
+      ),
+    );
+    }
+    
     return Column(
       children: [
         Expanded(
@@ -8302,6 +8894,28 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           ),
         );
       }
+    }
+    
+    // Settings menu
+    if (_canViewSettingsMenu) {
+    final List<_CollapsedMenuOption> settingsOptions = [];
+    settingsOptions.add(
+      _CollapsedMenuOption(
+        id: 'collection',
+        label: 'Collection',
+          isSelected: _selectedItem == NavItem.collectionCustomField,
+          onSelected: () => _navigateToRoute(NavItem.collectionCustomField),
+      ),
+    );
+    
+    menuItems.add(
+      _buildCollapsedMenuGroup(
+        icon: Icons.settings_outlined,
+        label: 'Settings',
+          isActive: _selectedItem == NavItem.collectionCustomField,
+        options: settingsOptions,
+      ),
+    );
     }
 
     return Column(
@@ -8551,6 +9165,19 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         content: Text(message),
         backgroundColor: color,
         duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showComingSoonMessage(String featureName) {
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$featureName - Coming Soon'),
+        backgroundColor: AppTheme.secondaryColor,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -8953,6 +9580,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.account_balance_wallet,
                       title: SuperAdminMenuNames.walletSelf,
                       isSelected: _selectedItem == NavItem.walletSelf,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -8968,6 +9596,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.account_balance_wallet_outlined,
                       title: 'All User Wallets',
                       isSelected: _selectedItem == NavItem.walletAll,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -8983,6 +9612,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.assessment_outlined,
                       title: 'All Wallet Report',
                       isSelected: _selectedItem == NavItem.walletOverview,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -9055,6 +9685,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.manage_accounts_outlined,
                       title: 'User Management',
                       isSelected: _selectedItem == NavItem.users,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -9071,6 +9702,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.security_outlined,
                       title: 'Roles',
                       isSelected: _selectedItem == NavItem.roles,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -9120,6 +9752,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.payment_outlined,
                       title: 'Payment Mode',
                       isSelected: _selectedItem == NavItem.paymentModes,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -9136,6 +9769,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.assessment_outlined,
                       title: 'Account Reports',
                       isSelected: _selectedItem == NavItem.accountReports,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -9190,6 +9824,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.category_outlined,
                       title: 'Expenses Type',
                       isSelected: _selectedItem == NavItem.expenseType,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -9206,6 +9841,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       icon: Icons.assessment_outlined,
                       title: 'Expense Report',
                       isSelected: _selectedItem == NavItem.expenseReport,
+                      isSubItem: true,
                       onTap: () {
                         setState(() {
                           _isDrawerOpen = false;
@@ -9245,6 +9881,51 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               ),
             ),
             children: expenseChildren,
+          ),
+        );
+      }
+    }
+    
+    // Settings menu - show if user has any settings permission
+    if (_canViewSettingsMenu) {
+      final List<Widget> settingsChildren = [];
+      settingsChildren.add(
+        _buildMobileNavItem(
+          icon: Icons.collections_outlined,
+          title: 'Collection',
+          isSelected: _selectedItem == NavItem.collectionCustomField,
+          isSubItem: true,
+          onTap: () {
+            setState(() {
+              _isDrawerOpen = false;
+              _settingsExpanded = true;
+            });
+            _navigateToRoute(NavItem.collectionCustomField);
+          },
+        ),
+      );
+      
+      // Only show settings menu if at least one child is visible
+      if (settingsChildren.isNotEmpty) {
+        menuItems.add(
+          ExpansionTile(
+            leading: Icon(
+              Icons.settings_outlined,
+              color: AppTheme.textSecondary,
+            ),
+            initiallyExpanded: _selectedItem == NavItem.collectionCustomField,
+            title: Text(
+              'Settings',
+              style: TextStyle(
+                fontWeight: _selectedItem == NavItem.collectionCustomField
+                    ? FontWeight.w600
+                    : FontWeight.normal,
+                color: _selectedItem == NavItem.collectionCustomField
+                    ? AppTheme.primaryColor
+                    : AppTheme.textPrimary,
+              ),
+            ),
+            children: settingsChildren,
           ),
         );
       }
@@ -9294,43 +9975,105 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     required bool isSelected,
     int? badge,
     required VoidCallback onTap,
+    bool isSubItem = false,
   }) {
-    return ListTile(
-      leading: Icon(icon, color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-          color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        margin: EdgeInsets.only(
+          left: isSubItem ? 40 : 8,
+          right: 8,
+          top: 4,
+          bottom: 4,
         ),
-      ),
-      trailing: badge != null && badge > 0
-          ? Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.errorColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                badge.toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primaryColor.withValues(alpha: 0.1) : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            if (isSubItem)
+              Container(
+                width: 4,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: isSelected ? AppTheme.primaryColor : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            )
-          : null,
-      selected: isSelected,
-      onTap: onTap,
+            if (isSubItem) const SizedBox(width: 12),
+            Icon(
+              icon,
+              color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: AppTheme.bodyMedium.copyWith(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            if (badge != null && badge > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.errorColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  badge.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _getContentForItem(NavItem item) {
     switch (item) {
       case NavItem.dashboard:
+        // Block non-wallet users from viewing dashboard
+        if (_isNonWalletUser) {
+          // Non-wallet user - redirect to All User Wallets
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _selectedItem == NavItem.dashboard) {
+              setState(() {
+                _selectedItem = NavItem.walletAll;
+              });
+            }
+          });
+          return const Center(
+            child: Text('Redirecting to All User Wallets...'),
+          );
+        }
         return _buildMainDashboard();
       case NavItem.walletSelf:
+        // Block non-wallet users from viewing My Wallet
+        if (_isNonWalletUser) {
+          // Non-wallet user - redirect to All User Wallets
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _selectedItem == NavItem.walletSelf) {
+              setState(() {
+                _selectedItem = NavItem.walletAll;
+              });
+            }
+          });
+          return const Center(
+            child: Text('Redirecting to All User Wallets...'),
+          );
+        }
         return _buildDashboardContent(isSelfWallet: true);
       case NavItem.walletAll:
         return const AllUserWalletsScreen(showAppBar: false);
@@ -9384,6 +10127,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           key: _pendingApprovalsRefreshKey,
           embedInDashboard: true,
         );
+      case NavItem.collectionCustomField:
+        return const CollectionCustomFieldScreen(showAppBar: false);
     }
   }
 
@@ -11528,8 +12273,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       print('   fromFlaggedItem: ${existingTransactionData['fromFlaggedItem']}');
       print('   flaggedItemId: ${existingTransactionData['flaggedItemId']}');
       print('   flaggedItemCategory: ${existingTransactionData['flaggedItemCategory']}');
-      print('🚩 [EDIT FROM FLAGGED] Opening _showNewAddTransactionDialog...');
-      print('==========================================\n');
+      // Safe debug logging
+      try {
+        debugPrint('🚩 [EDIT FROM FLAGGED] Opening _showNewAddTransactionDialog...');
+        debugPrint('==========================================\n');
+      } catch (e) {
+        // Ignore debug errors
+      }
       
       // Open transaction form in edit mode
       await _showNewAddTransactionDialog(
@@ -11714,6 +12464,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         final mode = existingExpenseData['mode']?.toString() ?? 'Cash';
         final category = existingExpenseData['category']?.toString() ?? '';
         final description = existingExpenseData['description']?.toString() ?? '';
+        final remarks = existingExpenseData['remarks']?.toString() ?? '';
         final accountId = existingExpenseData['accountId']?.toString();
         final proofUrl = existingExpenseData['proofUrl']?.toString();
         
@@ -11735,6 +12486,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         
         _expenseAmountController.text = amount.toString();
         _expenseDescriptionController.text = description;
+        _expenseRemarkController.text = remarks;
         
         setState(() {
           _expenseDialogStep = 2; // Start with step 2 (details) in edit mode
@@ -11750,6 +12502,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         // Reset for add mode
         _expenseAmountController.clear();
         _expenseDescriptionController.clear();
+        _expenseRemarkController.clear();
         
         setState(() {
           _expenseDialogStep = 1; // Start with step 1
@@ -12639,6 +13392,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                             },
                           ),
                           SizedBox(height: isMobile ? 16 : 20),
+                          
+                          // Remark Input (Optional)
+                          TextFormField(
+                            controller: _expenseRemarkController,
+                            maxLines: 3,
+                            enabled: !dialogIsSubmitting,
+                            decoration: InputDecoration(
+                              labelText: 'Remark (Optional)',
+                              hintText: 'Enter remark',
+                              prefixIcon: const Icon(Icons.note_outlined),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: isMobile ? 16 : 20),
+                          
                           // Proof Image Upload
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -12968,6 +13738,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                                         }
                                                         
                                                         final description = _expenseDescriptionController.text.trim();
+                                                        final remark = _expenseRemarkController.text.trim();
                                                         
                                                         // Upload image if selected and get URL
                                                         String? proofUrl;
@@ -13029,6 +13800,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                                                 amount: amount,
                                                                 mode: _selectedExpenseMode,
                                                                 description: description,
+                                                                remarks: remark.isNotEmpty ? remark : null,
                                                                 proofUrl: proofUrl,
                                                                 fromAllWalletReport: _selectedItem == NavItem.accountReports,
                                                               )
@@ -13037,6 +13809,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                                                 amount: amount,
                                                                 mode: _selectedExpenseMode,
                                                                 description: description,
+                                                                remarks: remark.isNotEmpty ? remark : null,
                                                                 proofUrl: proofUrl,
                                                               );
                                                         
@@ -13418,6 +14191,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                             // Clear form
                                             _expenseAmountController.clear();
                                             _expenseDescriptionController.clear();
+                                            _expenseRemarkController.clear();
                   setState(() {
                                                   _expenseDialogStep = 1;
                                                   _selectedExpenseTypeForDialog = null;
@@ -13556,19 +14330,29 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
   // New Add Transaction Dialog - Redesigned to match Transfer Amount form
   Future<void> _showNewAddTransactionDialog({Map<String, dynamic>? existingTransactionData, bool isEditMode = false}) async {
-    print('\n🔄 ===== OPENING TRANSACTION DIALOG =====');
-    print('🔄 [TRANSACTION DIALOG] Dialog opening');
-    print('   isEditMode: $isEditMode');
-    print('   existingTransactionData: ${existingTransactionData != null}');
-    if (existingTransactionData != null) {
-      print('   existingTransactionData keys: ${existingTransactionData.keys.toList()}');
-      print('   fromFlaggedItem: ${existingTransactionData['fromFlaggedItem']}');
-      print('   flaggedItemId: ${existingTransactionData['flaggedItemId']}');
-      print('   transactionId: ${existingTransactionData['transactionId']}');
-    } else {
-      print('   ⚠️ existingTransactionData is NULL - this is normal for new transactions');
+    // Safe debug logging (avoid Flutter web errors)
+    try {
+      debugPrint('\n🔄 ===== OPENING TRANSACTION DIALOG =====');
+      debugPrint('🔄 [TRANSACTION DIALOG] Dialog opening');
+      debugPrint('   isEditMode: $isEditMode');
+      debugPrint('   existingTransactionData: ${existingTransactionData != null}');
+      if (existingTransactionData != null) {
+        try {
+          final keysCount = existingTransactionData.keys.length;
+          debugPrint('   existingTransactionData has $keysCount keys');
+        } catch (e) {
+          // Ignore key access errors
+        }
+        debugPrint('   fromFlaggedItem: ${existingTransactionData['fromFlaggedItem']}');
+        debugPrint('   flaggedItemId: ${existingTransactionData['flaggedItemId']}');
+        debugPrint('   transactionId: ${existingTransactionData['transactionId']}');
+      } else {
+        debugPrint('   ⚠️ existingTransactionData is NULL - this is normal for new transactions');
+      }
+      debugPrint('==========================================\n');
+    } catch (e) {
+      // Ignore debug print errors
     }
-    print('==========================================\n');
     
     // Declare controller and disposal flag outside try block for catch block access
     TextEditingController? receiverSearchController;
@@ -15361,6 +16145,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   }
 
   Widget _buildFinancialSummaryCards(bool isMobile, bool isTablet) {
+    // Log values when UI is being built
+    debugPrint('💰 [UI BUILD] _buildFinancialSummaryCards called:');
+    debugPrint('   _cashIn=$_cashIn, _cashOut=$_cashOut, _balance=$_balance');
+    debugPrint('   _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
+    debugPrint('   _isExpenseReportMode=$_isExpenseReportMode, _selectedItem=$_selectedItem');
+    
     // Financial Summary card matching Quote card size
     return Container(
       padding: EdgeInsets.symmetric(
@@ -20259,15 +21049,18 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
     // Action buttons for All Accounts, Self Wallet, All Wallet Report, and Expense Report views
     final bool isAllWalletReport = (customTitle == 'Wallet Report' && _selectedItem == NavItem.walletOverview);
+    final bool isAllUserWallets = _selectedItem == NavItem.walletAll;
     final bool showActionButtons = (isAllAccounts && (customTitle == null || customTitle == 'Account Reports')) ||
         (isSelfWallet && (customTitle == null || customTitle == 'Wallet Report')) ||
         isAllWalletReport ||
+        isAllUserWallets ||
         isExpenseReportOnly;
     
     // For All Account Reports: Only Add Amount and Withdraw
     // For Self Wallet and All Wallet Report: All 5 buttons
     // For Expense Report: Only Add Expenses button
-    final bool isWalletView = (isSelfWallet && (customTitle == null || customTitle == 'Wallet Report')) || isAllWalletReport;
+    // For All User Wallets: Use new permission-based buttons
+    final bool isWalletView = (isSelfWallet && (customTitle == null || customTitle == 'Wallet Report')) || isAllWalletReport || isAllUserWallets;
     
     final Widget? actionButtons = showActionButtons
         ? Row(
@@ -20325,7 +21118,56 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 ),
               ] else ...[
               // Add Amount button (hidden for Self Wallet and All Wallet Report)
-              if (!isSelfWallet && !isAllWalletReport) ...[
+              // For All User Wallets: Check permission _canAddAmountAll
+              if (isAllUserWallets && _canAddAmountAll) ...[
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _showNewAddAmountDialog,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 8 : 10,
+                          vertical: isMobile ? 4 : 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryColor,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.add,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              isMobile ? 'Add' : 'Add Amount',
+                              style: TextStyle(
+                                color: AppTheme.primaryColor,
+                                fontWeight: FontWeight.w600,
+                                fontSize: isMobile ? 11 : 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ] else if (!isSelfWallet && !isAllWalletReport) ...[
                 Container(
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor.withOpacity(0.1),
@@ -20375,7 +21217,56 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 const SizedBox(width: 6),
               ],
               // Withdraw button (hidden for Self Wallet and All Wallet Report)
-              if (!isSelfWallet && !isAllWalletReport) ...[
+              // For All User Wallets: Check permission _canWithdrawAll
+              if (isAllUserWallets && _canWithdrawAll) ...[
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.errorColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _showNewWithdrawDialog,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 8 : 10,
+                          vertical: isMobile ? 4 : 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: AppTheme.errorColor,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.remove,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Withdraw',
+                              style: TextStyle(
+                                color: AppTheme.errorColor,
+                                fontWeight: FontWeight.w600,
+                                fontSize: isMobile ? 11 : 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ] else if (!isSelfWallet && !isAllWalletReport) ...[
                 Container(
                   decoration: BoxDecoration(
                     color: AppTheme.errorColor.withOpacity(0.1),
@@ -20426,7 +21317,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               // Only show Expenses, Collection, and Transaction buttons for Wallet views
               if (isWalletView) ...[
                 // Add spacing only if previous buttons were shown (not Self Wallet, but not for All Wallet Report)
-                if (!isSelfWallet && !isAllWalletReport) SizedBox(width: isMobile ? 4 : 6),
+                // For All User Wallets: add spacing if Add Amount or Withdraw buttons were shown
+                if (isAllUserWallets && (_canAddAmountAll || _canWithdrawAll)) SizedBox(width: isMobile ? 4 : 6)
+                else if (!isSelfWallet && !isAllWalletReport) SizedBox(width: isMobile ? 4 : 6),
                 // Mobile: Use icon-only buttons with tooltips, Desktop: Full buttons with text
                 if (isMobile)
                   Align(
@@ -20436,8 +21329,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       runSpacing: 8,
                       alignment: WrapAlignment.end,
                       children: [
-                      // Add Expenses button - only show if user has create permission
-                      if (_canCreateExpenses)
+                      // Add Expenses button - check permission based on view
+                      // For All User Wallets: use _canAddExpenseAll, otherwise use _canCreateExpenses
+                      if ((isAllUserWallets && _canAddExpenseAll) || (!isAllUserWallets && _canCreateExpenses))
                         Tooltip(
                           message: 'Add Expenses',
                           child: Material(
@@ -20465,8 +21359,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                             ),
                           ),
                         ),
-                      // Add Collection button - only show if user has create permission
-                      if (_canCreateCollection)
+                      // Add Collection button - check permission based on view
+                      // For All User Wallets: use _canAddCollectionAll, otherwise use _canCreateCollection
+                      if ((isAllUserWallets && _canAddCollectionAll) || (!isAllUserWallets && _canCreateCollection))
                         Tooltip(
                           message: 'Add Collection',
                           child: Material(
@@ -20494,8 +21389,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                             ),
                           ),
                         ),
-                      // Add Transaction button - only show if user has create permission
-                      if (_canCreateTransaction)
+                      // Add Transaction button - check permission based on view
+                      // For All User Wallets: use _canAddTransactionAll, otherwise use _canCreateTransaction
+                      if ((isAllUserWallets && _canAddTransactionAll) || (!isAllUserWallets && _canCreateTransaction))
                         Tooltip(
                           message: 'Add Transaction',
                           child: Material(
@@ -20528,8 +21424,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   )
                 else ...[
                   // Desktop: Full buttons with text
-                // Add Expenses button - only show if user has create permission
-                if (_canCreateExpenses)
+                // Add Expenses button - check permission based on view
+                // For All User Wallets: use _canAddExpenseAll, otherwise use _canCreateExpenses
+                if ((isAllUserWallets && _canAddExpenseAll) || (!isAllUserWallets && _canCreateExpenses))
                   Container(
                     decoration: BoxDecoration(
                       color: AppTheme.warningColor.withOpacity(0.1),
@@ -20576,9 +21473,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       ),
                     ),
                   ),
-                if (_canCreateExpenses) const SizedBox(width: 6),
-                // Add Collection button - only show if user has create permission
-                if (_canCreateCollection)
+                if ((isAllUserWallets && _canAddExpenseAll) || (!isAllUserWallets && _canCreateExpenses)) const SizedBox(width: 6),
+                // Add Collection button - check permission based on view
+                // For All User Wallets: use _canAddCollectionAll, otherwise use _canCreateCollection
+                if ((isAllUserWallets && _canAddCollectionAll) || (!isAllUserWallets && _canCreateCollection))
                   Container(
                     decoration: BoxDecoration(
                       color: AppTheme.secondaryColor.withOpacity(0.1),
@@ -20625,9 +21523,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       ),
                     ),
                   ),
-                if (_canCreateCollection && _canCreateTransaction) const SizedBox(width: 6),
-                // Add Transaction button - only show if user has create permission
-                if (_canCreateTransaction)
+                if (((isAllUserWallets && _canAddCollectionAll) || (!isAllUserWallets && _canCreateCollection)) && 
+                    ((isAllUserWallets && _canAddTransactionAll) || (!isAllUserWallets && _canCreateTransaction))) const SizedBox(width: 6),
+                // Add Transaction button - check permission based on view
+                // For All User Wallets: use _canAddTransactionAll, otherwise use _canCreateTransaction
+                if ((isAllUserWallets && _canAddTransactionAll) || (!isAllUserWallets && _canCreateTransaction))
                   Container(
                     decoration: BoxDecoration(
                       color: AppTheme.accentBlue.withOpacity(0.1),
@@ -22594,6 +23494,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
     return Container(
       width: double.infinity,
+      clipBehavior: Clip.none, // Allow dropdown menus to appear above this container
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -24178,6 +25079,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             typeOptions,
             (value) {
               final filterProvider = _filterProvider;
+              debugPrint('🔍 [SELF WALLET] Type filter changed: ${filterProvider.selectedType} → ${value == 'All' ? null : value}');
               setState(() {
                 filterProvider.setType(value == 'All' ? null : value);
                 if (filterProvider.selectedType == null) {
@@ -24232,7 +25134,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         ValueListenableBuilder<bool>(
           valueListenable: _paymentModesLoadedNotifier,
           builder: (context, _, __) {
-            final List<String> modeOptions = isAllAccounts ? _getActiveModeOptions(isAccountReports: true) : _getActiveModeOptions();
+            // Show active payment modes from database for all views (including Self Wallet)
+            final List<String> modeOptions = isAllAccounts 
+                ? _getActiveModeOptions(isAccountReports: true) 
+                : _getActiveModeOptions();
             return buildFilter(
               _buildDropdownFilter(
                 'Mode',
@@ -24240,6 +25145,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 modeOptions,
                 (value) {
                   final filterProvider = _filterProvider;
+                  if (isSelfWallet) {
+                    debugPrint('🔍 [SELF WALLET] Mode filter changed: ${filterProvider.selectedMode} → ${value == 'All' ? null : value}');
+                  }
                   filterProvider.setMode(value == 'All' ? null : value);
                   _applyFilters();
                 },
@@ -24352,7 +25260,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         ValueListenableBuilder<bool>(
           valueListenable: _paymentModesLoadedNotifier,
           builder: (context, _, __) {
-            final List<String> modeOptions = isAllAccounts ? _getActiveModeOptions(isAccountReports: true) : _getActiveModeOptions();
+            // Show active payment modes from database for all views (including Self Wallet)
+            final List<String> modeOptions = isAllAccounts 
+                ? _getActiveModeOptions(isAccountReports: true) 
+                : _getActiveModeOptions();
             return buildFilter(
               _buildDropdownFilter(
                 'Mode',
@@ -24360,6 +25271,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 modeOptions,
                 (value) {
                   final filterProvider = _filterProvider;
+                  if (isSelfWallet) {
+                    debugPrint('🔍 [SELF WALLET] Mode filter changed: ${filterProvider.selectedMode} → ${value == 'All' ? null : value}');
+                  }
                   filterProvider.setMode(value == 'All' ? null : value);
                   _applyFilters();
                 },
@@ -24401,52 +25315,59 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     // Validate that currentValue exists in items, otherwise use first item
     final validatedValue = safeItems.contains(currentValue) ? currentValue : safeItems.first;
     
-    return DropdownButtonFormField<String>(
-      value: validatedValue,
-      isDense: true,
-      isExpanded: isMobile, // Only expand on mobile, not on desktop/tablet (to avoid Row conflicts)
-      menuMaxHeight: 300, // Limit dropdown menu height to prevent overflow
-      borderRadius: BorderRadius.circular(8), // Rounded corners for dropdown menu (like in image)
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: AppTheme.borderColor),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: AppTheme.borderColor),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-        ),
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: isMobile ? 10 : 12,
-          vertical: isMobile ? 8 : 10,
-        ),
-      ),
-      items: safeItems.map((String item) {
-        final displayText = _formatStatusLabel(item);
-        return DropdownMenuItem<String>(
-          value: item,
-          child: Text(
-            displayText.isEmpty ? item : displayText, 
-            style: AppTheme.bodyMedium,
-            overflow: TextOverflow.ellipsis,
+    // Wrap in Material widget with elevation to ensure dropdown menu appears above other widgets
+    // Higher elevation ensures dropdown menu overlay appears above parent Container's shadow
+    return Material(
+      elevation: 8,
+      color: Colors.transparent,
+      shadowColor: Colors.transparent, // Hide Material shadow, we only need elevation for z-index
+      child: DropdownButtonFormField<String>(
+        value: validatedValue,
+        isDense: true,
+        isExpanded: isMobile, // Only expand on mobile, not on desktop/tablet (to avoid Row conflicts)
+        menuMaxHeight: 300, // Limit dropdown menu height to prevent overflow
+        borderRadius: BorderRadius.circular(8), // Rounded corners for dropdown menu (like in image)
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: AppTheme.borderColor),
           ),
-        );
-      }).toList(),
-      onChanged: onChanged,
-      // Ensure dropdown menu appears below the button with white background
-      dropdownColor: Colors.white,
-      icon: Icon(
-        Icons.keyboard_arrow_down,
-        color: AppTheme.textSecondary,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: AppTheme.borderColor),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
+          ),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 10 : 12,
+            vertical: isMobile ? 8 : 10,
+          ),
+        ),
+        items: safeItems.map((String item) {
+          final displayText = _formatStatusLabel(item);
+          return DropdownMenuItem<String>(
+            value: item,
+            child: Text(
+              displayText.isEmpty ? item : displayText, 
+              style: AppTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }).toList(),
+        onChanged: onChanged,
+        // Ensure dropdown menu appears below the button with white background
+        dropdownColor: Colors.white,
+        icon: Icon(
+          Icons.keyboard_arrow_down,
+          color: AppTheme.textSecondary,
+        ),
+        // Menu will automatically open below the button (Flutter default behavior)
+        // alignment controls text alignment within button, not menu position
+        alignment: AlignmentDirectional.centerStart,
       ),
-      // Menu will automatically open below the button (Flutter default behavior)
-      // alignment controls text alignment within button, not menu position
-      alignment: AlignmentDirectional.centerStart,
     );
   }
 
@@ -24560,10 +25481,16 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         ? currentValue
         : 'All';
     
-    return DropdownButtonFormField<String>(
-      value: validatedValue,
-      isDense: true,
-      decoration: InputDecoration(
+    // Wrap in Material widget with elevation to ensure dropdown menu appears above other widgets
+    // Higher elevation ensures dropdown menu overlay appears above parent Container's shadow
+    return Material(
+      elevation: 8,
+      color: Colors.transparent,
+      shadowColor: Colors.transparent, // Hide Material shadow, we only need elevation for z-index
+      child: DropdownButtonFormField<String>(
+        value: validatedValue,
+        isDense: true,
+        decoration: InputDecoration(
         labelText: label,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -24728,6 +25655,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         }).toList();
       },
       onChanged: onChanged,
+      dropdownColor: Colors.white,
+      icon: Icon(
+        Icons.keyboard_arrow_down,
+        color: AppTheme.textSecondary,
+      ),
+      alignment: AlignmentDirectional.centerStart,
+      ),
     );
   }
 
@@ -24744,6 +25678,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         _getStatusOptions(),
         (value) {
           final filterProvider = _filterProvider;
+          if (isSelfWallet) {
+            debugPrint('🔍 [SELF WALLET] Status filter changed (dropdown): ${filterProvider.selectedStatus} → ${value == 'All' ? null : value}');
+          }
           setState(() {
             filterProvider.setStatus(value == 'All' ? null : value);
             _selectedStatusSet.clear();
@@ -24853,6 +25790,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       ],
       onSelected: (value) {
         if (value == 'clear') {
+          debugPrint('🔍 [SELF WALLET] Status filter cleared - clearing all selections');
           setState(() {
             _selectedStatusSet.clear();
             final filterProvider = _filterProvider;
@@ -24860,11 +25798,16 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           });
           _applyFilters();
         } else {
+          final wasSelected = _selectedStatusSet.contains(value);
+          debugPrint('🔍 [SELF WALLET] Status filter changed (multi-select): $value');
+          debugPrint('   Was selected: $wasSelected');
           setState(() {
             if (_selectedStatusSet.contains(value)) {
               _selectedStatusSet.remove(value);
+              debugPrint('   Removed from selection. New set: $_selectedStatusSet');
             } else {
               _selectedStatusSet.add(value);
+              debugPrint('   Added to selection. New set: $_selectedStatusSet');
             }
             final filterProvider = _filterProvider;
             filterProvider.setStatus(null);
@@ -27317,9 +28260,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                 )
                               else if (accounts.isEmpty)
                                 DropdownButtonFormField<String>(
-                                  value: selectedMode != null && ['Cash', 'UPI', 'Bank'].contains(selectedMode)
-                                      ? selectedMode
-                                      : null,
+                                  value: selectedMode,
                                   decoration: InputDecoration(
                                     labelText: 'Payment Mode',
                                     prefixIcon: Icon(selectedMode != null
@@ -27796,12 +28737,56 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     );
   }
 
-  void _showEditExpenseDialog(Map<String, dynamic> item) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Expense editing is not available. Please reject and create a new expense.'),
-      ),
-    );
+  Future<void> _showEditExpenseDialog(Map<String, dynamic> item) async {
+    // For All Wallet Report, use the expense dialog instead of showing error
+    final bool isAllWalletReport = _selectedItem == NavItem.accountReports || _selectedItem == NavItem.walletOverview;
+    
+    if (isAllWalletReport) {
+      // Extract expense data and open expense dialog in edit mode
+      final expenseId = item['id']?.toString() ?? item['_id']?.toString() ?? item['expenseId']?.toString() ?? '';
+      if (expenseId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Expense ID not found'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+        return;
+      }
+      
+      // Extract expense data
+      final amount = (item['amount'] as num?)?.toDouble() ?? 0.0;
+      final paymentMode = item['mode']?.toString() ?? 'Cash';
+      final expenseType = item['category']?.toString() ?? item['expenseType']?.toString() ?? '';
+      final description = item['description']?.toString() ?? '';
+      final proofUrl = item['proofUrl']?.toString();
+      final accountId = item['accountId']?.toString();
+      
+      // Prepare expense data for edit mode
+      final existingExpenseData = {
+        'expenseId': expenseId,
+        'id': expenseId,
+        'amount': amount,
+        'mode': paymentMode,
+        'category': expenseType,
+        'description': description,
+        'proofUrl': proofUrl,
+        'accountId': accountId,
+      };
+      
+      // Open expense form in edit mode
+      await _showNewAddExpensesDialog(
+        existingExpenseData: existingExpenseData,
+        isEditMode: true,
+      );
+    } else {
+      // For other views, show message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Expense editing is not available. Please reject and create a new expense.'),
+        ),
+      );
+    }
   }
 
   Future<void> _handleDelete(Map<String, dynamic> item) async {
@@ -28507,9 +29492,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                       vertical: isMobile ? 16 : 14,
                                     ),
                                   ),
-                                  items: ['Cash', 'UPI', 'Bank'].map((mode) {
+                                  items: _getActiveModeOptions().map((mode) {
                                     return DropdownMenuItem<String>(
-                                      value: mode,
+                                      value: mode == 'All' ? null : mode,
                                       child: Text(mode),
                                     );
                                   }).toList(),
@@ -28827,6 +29812,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                             Navigator.of(dialogContext).pop();
                                             _expenseAmountController.clear();
                                             _expenseDescriptionController.clear();
+                                            _expenseRemarkController.clear();
                                             setState(() {
                                               _selectedExpenseCategory = 'Office';
                                               _selectedExpenseMode = 'Cash';

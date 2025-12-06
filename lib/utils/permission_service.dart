@@ -185,7 +185,7 @@ class PermissionService {
         await hasPermission('wallet.self.collection.transaction', userRole);
   }
 
-  // ========== All User Wallets / All Wallet Report Permissions ==========
+  // ========== All User Wallets Permissions ==========
 
   // Transaction Permissions
   static Future<bool> canCreateAllTransaction(String userRole) async {

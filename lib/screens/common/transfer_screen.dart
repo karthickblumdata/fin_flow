@@ -5,6 +5,8 @@ import '../../utils/responsive.dart';
 import '../../services/transaction_service.dart';
 import '../../services/user_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/payment_mode_service.dart';
+import '../../utils/wallet_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class TransferScreen extends StatelessWidget {
@@ -56,19 +58,64 @@ class _TransferScreenContentState extends State<_TransferScreenContent> {
   String? _selectedReceiverId;
   String? _selectedReceiverName;
   String? _selectedReceiverDisplay;
-  String _selectedMode = 'Cash';
+  String? _selectedMode; // Will be derived from selected PaymentMode
   bool _isLoading = false;
   bool _isLoadingUsers = true;
   List<Map<String, dynamic>> _users = [];
   String? _currentUserId;
 
-  final List<String> _modes = ['Cash', 'UPI', 'Bank'];
+  List<Map<String, dynamic>> _paymentModes = [];
+  String? _selectedPaymentModeId;
+  bool _isLoadingPaymentModes = false;
 
   @override
   void initState() {
     super.initState();
     _loadCurrentUserId();
     _loadUsers();
+    _loadPaymentModes();
+  }
+
+  Future<void> _loadPaymentModes() async {
+    setState(() {
+      _isLoadingPaymentModes = true;
+    });
+
+    try {
+      final result = await PaymentModeService.getPaymentModes();
+      if (result['success'] == true && mounted) {
+        final paymentModes = result['paymentModes'] as List<dynamic>? ?? [];
+        setState(() {
+          _paymentModes = paymentModes
+              .where((pm) => pm['isActive'] == true)
+              .map((pm) => Map<String, dynamic>.from(pm))
+              .toList();
+          _isLoadingPaymentModes = false;
+          if (_paymentModes.isNotEmpty) {
+            _selectedPaymentModeId = _paymentModes.first['_id']?.toString() ?? 
+                                    _paymentModes.first['id']?.toString();
+            // Derive mode from selected PaymentMode
+            final description = _paymentModes.first['description']?.toString() ?? '';
+            final parsed = PaymentModeService.parseDescription(description);
+            _selectedMode = parsed['mode']?.toString() ?? 'Cash';
+          }
+        });
+      } else {
+        if (mounted) {
+          setState(() {
+            _paymentModes = [];
+            _isLoadingPaymentModes = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _paymentModes = [];
+          _isLoadingPaymentModes = false;
+        });
+      }
+    }
   }
 
   @override
@@ -101,8 +148,9 @@ class _TransferScreenContentState extends State<_TransferScreenContent> {
           return userId != _currentUserId && isVerified == true;
         }).toList();
         
-        setState(() {
-          _users = filteredUsers.map((u) {
+        // Filter out non-wallet users (only show users with wallets for transfers)
+        final usersWithWallets = await WalletHelper.filterUsersWithWallets(
+          filteredUsers.map((u) {
             final name = _extractUserName(u);
             final display = _composeDisplayLabel(u);
             return {
@@ -113,7 +161,11 @@ class _TransferScreenContentState extends State<_TransferScreenContent> {
               'role': u['role'] ?? '',
               'isVerified': u['isVerified'] ?? false,
             };
-          }).toList();
+          }).toList(),
+        );
+        
+        setState(() {
+          _users = usersWithWallets;
           _isLoadingUsers = false;
         });
         
@@ -232,7 +284,7 @@ class _TransferScreenContentState extends State<_TransferScreenContent> {
           sender: _currentUserId!,
           receiver: _selectedReceiverId!,
           amount: amount,
-          mode: _selectedMode,
+          mode: _selectedMode ?? 'Cash',
           purpose: purpose.isEmpty ? null : purpose,
         );
 
@@ -416,7 +468,7 @@ class _TransferScreenContentState extends State<_TransferScreenContent> {
                       border: Border.all(color: AppTheme.borderColor),
                     ),
                     child: DropdownButtonFormField<String>(
-                      value: _selectedMode,
+                      value: _selectedPaymentModeId,
                       decoration: InputDecoration(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -425,11 +477,27 @@ class _TransferScreenContentState extends State<_TransferScreenContent> {
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
+                        suffixIcon: _isLoadingPaymentModes
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: Padding(
+                                  padding: EdgeInsets.all(12.0),
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : null,
                       ),
                       icon: const Icon(Icons.keyboard_arrow_down),
-                      items: _modes.map((String mode) {
+                      items: _paymentModes.map((pm) {
+                        final modeName = pm['modeName']?.toString() ?? 'Unknown';
+                        final modeId = pm['_id']?.toString() ?? pm['id']?.toString();
+                        final description = pm['description']?.toString() ?? '';
+                        final parsed = PaymentModeService.parseDescription(description);
+                        final mode = parsed['mode']?.toString() ?? 'Cash';
+                        
                         return DropdownMenuItem<String>(
-                          value: mode,
+                          value: modeId,
                           child: Row(
                             children: [
                               Icon(
@@ -442,16 +510,27 @@ class _TransferScreenContentState extends State<_TransferScreenContent> {
                                 size: 20,
                               ),
                               const SizedBox(width: 12),
-                              Text(mode),
+                              Text(modeName),
                             ],
                           ),
                         );
                       }).toList(),
                       onChanged: (String? newValue) {
                         if (newValue != null) {
-                          setState(() {
-                            _selectedMode = newValue;
-                          });
+                          final selectedPM = _paymentModes.firstWhere(
+                            (pm) => (pm['_id']?.toString() ?? pm['id']?.toString()) == newValue,
+                            orElse: () => {},
+                          );
+                          if (selectedPM.isNotEmpty) {
+                            final description = selectedPM['description']?.toString() ?? '';
+                            final parsed = PaymentModeService.parseDescription(description);
+                            final mode = parsed['mode']?.toString() ?? 'Cash';
+                            
+                            setState(() {
+                              _selectedPaymentModeId = newValue;
+                              _selectedMode = mode;
+                            });
+                          }
                         }
                       },
                     ),

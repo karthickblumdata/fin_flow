@@ -29,7 +29,8 @@ class _AddAmountDialogState extends State<AddAmountDialog> {
   String? _selectedMode;
   bool _isLoading = false;
   bool _isLoadingModes = true;
-  List<String> _modes = [];
+  List<Map<String, dynamic>> _paymentModes = [];
+  String? _selectedPaymentModeId;
 
   @override
   void initState() {
@@ -56,49 +57,34 @@ class _AddAmountDialogState extends State<AddAmountDialog> {
         if (result['success'] == true) {
           final paymentModes = result['paymentModes'] as List<dynamic>? ?? [];
           
-          // Extract unique modes (Cash/UPI/Bank) from active payment modes
-          final Set<String> availableModes = {};
-          
-          for (final pm in paymentModes) {
-            // Check if payment mode is active
-            final isActive = pm['isActive'] == true;
-            if (!isActive) continue;
-            
-            // Extract mode from description (format: "mode:Cash" or similar)
-            final description = pm['description']?.toString() ?? '';
-            final parsed = PaymentModeService.parseDescription(description);
-            final mode = parsed['mode']?.toString();
-            
-            // If mode is found and is valid (Cash, UPI, or Bank), add it
-            if (mode != null && ['Cash', 'UPI', 'Bank'].contains(mode)) {
-              availableModes.add(mode);
-            }
-          }
-          
-          // Convert to sorted list
-          final sortedModes = availableModes.toList()..sort();
-          
+          // Store all active PaymentModes directly
           setState(() {
-            _modes = sortedModes;
-            // Set default selected mode to first available, or null if none
-            _selectedMode = sortedModes.isNotEmpty ? sortedModes.first : null;
+            _paymentModes = paymentModes
+                .where((pm) => pm['isActive'] == true)
+                .map((pm) => Map<String, dynamic>.from(pm))
+                .toList();
             _isLoadingModes = false;
+            // Set default selected payment mode to first available
+            if (_paymentModes.isNotEmpty) {
+              _selectedPaymentModeId = _paymentModes.first['_id']?.toString() ?? 
+                                      _paymentModes.first['id']?.toString();
+              // Derive mode from selected PaymentMode
+              final description = _paymentModes.first['description']?.toString() ?? '';
+              final parsed = PaymentModeService.parseDescription(description);
+              _selectedMode = parsed['mode']?.toString() ?? 'Cash';
+            }
           });
         } else {
-          // Fallback to default modes if loading fails
           setState(() {
-            _modes = ['Cash', 'UPI', 'Bank'];
-            _selectedMode = 'Cash';
+            _paymentModes = [];
             _isLoadingModes = false;
           });
         }
       }
     } catch (e) {
       if (mounted) {
-        // Fallback to default modes on error
         setState(() {
-          _modes = ['Cash', 'UPI', 'Bank'];
-          _selectedMode = 'Cash';
+          _paymentModes = [];
           _isLoadingModes = false;
         });
       }
@@ -115,7 +101,7 @@ class _AddAmountDialogState extends State<AddAmountDialog> {
     });
 
     try {
-      if (_selectedMode == null || _selectedMode!.isEmpty) {
+      if (_selectedMode == null || _selectedPaymentModeId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Please select a payment mode'),
@@ -316,7 +302,7 @@ class _AddAmountDialogState extends State<AddAmountDialog> {
                                 ],
                               ),
                             )
-                          : _modes.isEmpty
+                          : _paymentModes.isEmpty
                               ? Container(
                                   padding: EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -342,7 +328,7 @@ class _AddAmountDialogState extends State<AddAmountDialog> {
                                   ),
                                 )
                               : DropdownButtonFormField<String>(
-                                  value: _selectedMode,
+                                  value: _selectedPaymentModeId,
                                   decoration: InputDecoration(
                                     labelText: 'Payment Mode',
                                     prefixIcon: const Icon(Icons.payment),
@@ -353,11 +339,27 @@ class _AddAmountDialogState extends State<AddAmountDialog> {
                                       horizontal: 16,
                                       vertical: isMobile ? 16 : 14,
                                     ),
+                                    suffixIcon: _isLoadingModes
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: Padding(
+                                              padding: EdgeInsets.all(12.0),
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            ),
+                                          )
+                                        : null,
                                   ),
                                   style: TextStyle(
                                     fontSize: isMobile ? 16 : 15,
                                   ),
-                                  items: _modes.map((mode) {
+                                  items: _paymentModes.map((pm) {
+                                    final modeName = pm['modeName']?.toString() ?? 'Unknown';
+                                    final modeId = pm['_id']?.toString() ?? pm['id']?.toString();
+                                    final description = pm['description']?.toString() ?? '';
+                                    final parsed = PaymentModeService.parseDescription(description);
+                                    final mode = parsed['mode']?.toString() ?? 'Cash';
+                                    
                                     IconData icon;
                                     if (mode == 'Cash') {
                                       icon = Icons.money;
@@ -368,21 +370,32 @@ class _AddAmountDialogState extends State<AddAmountDialog> {
                                     }
 
                                     return DropdownMenuItem<String>(
-                                      value: mode,
+                                      value: modeId,
                                       child: Row(
                                         children: [
                                           Icon(icon, size: 20, color: AppTheme.primaryColor),
                                           const SizedBox(width: 12),
-                                          Text(mode),
+                                          Text(modeName),
                                         ],
                                       ),
                                     );
                                   }).toList(),
                                   onChanged: (value) {
                                     if (value != null) {
-                                      setState(() {
-                                        _selectedMode = value;
-                                      });
+                                      final selectedPM = _paymentModes.firstWhere(
+                                        (pm) => (pm['_id']?.toString() ?? pm['id']?.toString()) == value,
+                                        orElse: () => {},
+                                      );
+                                      if (selectedPM.isNotEmpty) {
+                                        final description = selectedPM['description']?.toString() ?? '';
+                                        final parsed = PaymentModeService.parseDescription(description);
+                                        final mode = parsed['mode']?.toString() ?? 'Cash';
+                                        
+                                        setState(() {
+                                          _selectedPaymentModeId = value;
+                                          _selectedMode = mode;
+                                        });
+                                      }
                                     }
                                   },
                                   validator: (value) {

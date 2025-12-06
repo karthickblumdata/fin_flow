@@ -62,6 +62,7 @@ class UserService {
     String? state,
     String? pinCode,
     bool? isVerified,
+    bool? isNonWalletUser,
   }) async {
     try {
       // Map frontend role to backend role
@@ -98,6 +99,9 @@ class UserService {
       }
       if (isVerified != null) {
         body['isVerified'] = isVerified;
+      }
+      if (isNonWalletUser != null) {
+        body['isNonWalletUser'] = isNonWalletUser;
       }
 
       // Don't send empty body
