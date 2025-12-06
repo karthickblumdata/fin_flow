@@ -6,16 +6,32 @@ class PaymentModeService {
   /// [displayType] - Filter by display type: 'Collection', 'Expenses', or 'Transaction'
   static Future<Map<String, dynamic>> getPaymentModes({String? displayType}) async {
     try {
-      String url = ApiConstants.getPaymentModes;
+      // Debug logging
+      print('🔍 [PaymentModeService] getPaymentModes called with displayType: $displayType');
+      
+      // Map frontend display types to backend values
+      String? backendDisplayType;
       if (displayType != null && displayType.isNotEmpty) {
-        // Map frontend display types to backend values
-        String backendDisplayType = displayType;
+        backendDisplayType = displayType;
         if (displayType == 'Expense') {
           backendDisplayType = 'Expenses'; // Backend uses 'Expenses'
         }
-        url += '?displayType=$backendDisplayType';
       }
-      final response = await ApiService.get(url);
+      
+      // Use queryParams parameter instead of manually appending to URL
+      final Map<String, String>? queryParams = backendDisplayType != null
+          ? {'displayType': backendDisplayType}
+          : null;
+      
+      print('🔍 [PaymentModeService] Query params: $queryParams');
+      print('🔍 [PaymentModeService] Backend display type: $backendDisplayType');
+      
+      final response = await ApiService.get(
+        ApiConstants.getPaymentModes,
+        queryParams: queryParams,
+      );
+      
+      print('🔍 [PaymentModeService] Response received: ${response['success']}, count: ${response['paymentModes']?.length ?? 0}');
 
       if (response['success'] == true) {
         return {

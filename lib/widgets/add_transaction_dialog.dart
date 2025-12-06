@@ -149,12 +149,15 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
   }
 
   Future<void> _loadPaymentModes() async {
+    print('🔍 [AddTransactionDialog] _loadPaymentModes() called');
     setState(() {
       _isLoadingPaymentModes = true;
     });
 
     try {
+      print('🔍 [AddTransactionDialog] Calling getPaymentModes with displayType: Transaction');
       final result = await PaymentModeService.getPaymentModes(displayType: 'Transaction');
+      print('🔍 [AddTransactionDialog] getPaymentModes response: success=${result['success']}, count=${result['paymentModes']?.length ?? 0}');
       if (result['success'] == true && mounted) {
         final paymentModes = result['paymentModes'] as List<dynamic>? ?? [];
         setState(() {

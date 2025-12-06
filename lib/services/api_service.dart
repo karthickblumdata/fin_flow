@@ -79,6 +79,11 @@ class ApiService {
       
       if (queryParams != null && queryParams.isNotEmpty) {
         uri = uri.replace(queryParameters: queryParams);
+        print('🔍 [ApiService.get] Added query params: $queryParams');
+        print('🔍 [ApiService.get] Final URI: ${uri.toString()}');
+      } else {
+        print('🔍 [ApiService.get] No query params provided');
+        print('🔍 [ApiService.get] Final URI: ${uri.toString()}');
       }
       
       final headers = await _getHeaders(includeAuth: includeAuth);

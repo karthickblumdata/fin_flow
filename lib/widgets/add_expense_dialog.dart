@@ -113,12 +113,15 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
   }
 
   Future<void> _loadPaymentModes() async {
+    print('🔍 [AddExpenseDialog] _loadPaymentModes() called');
     setState(() {
       _isLoadingModes = true;
     });
 
     try {
+      print('🔍 [AddExpenseDialog] Calling getPaymentModes with displayType: Expenses');
       final result = await PaymentModeService.getPaymentModes(displayType: 'Expenses');
+      print('🔍 [AddExpenseDialog] getPaymentModes response: success=${result['success']}, count=${result['paymentModes']?.length ?? 0}');
       
       if (mounted) {
         if (result['success'] == true) {

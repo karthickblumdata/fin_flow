@@ -957,10 +957,25 @@ class _AddExpenseTypeDialogState extends State<AddExpenseTypeDialog> {
           'expenseType': result['expenseType'],
         });
       } else {
+        // Show detailed error message
+        final errorMessage = result['message'] ?? 'Failed to create expense type';
+        final statusCode = result['statusCode'];
+        
+        print('❌ Expense type creation failed:');
+        print('   Message: $errorMessage');
+        print('   Status Code: $statusCode');
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message'] ?? 'Failed to create expense type'),
+            content: Text(
+              statusCode == 403 
+                ? 'Permission denied. You do not have permission to create expense types.'
+                : statusCode == 400
+                  ? errorMessage
+                  : 'Failed to create expense type: $errorMessage',
+            ),
             backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 5),
           ),
         );
       }

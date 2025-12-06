@@ -36,6 +36,14 @@ class ExpenseTypeService {
     bool proofRequired = false,
   }) async {
     try {
+      print('\n📝 ===== CREATE EXPENSE TYPE REQUEST (Frontend) =====');
+      print('   Name: ${name.trim()}');
+      print('   Description: ${description != null && description.trim().isNotEmpty ? "provided" : "not provided"}');
+      print('   IsActive: $isActive');
+      print('   ImageUrl: ${imageUrl != null && imageUrl.trim().isNotEmpty ? "provided" : "not provided"}');
+      print('   ProofRequired: $proofRequired');
+      print('====================================================\n');
+
       final requestData = <String, dynamic>{
         'name': name.trim(),
         'isActive': isActive,
@@ -50,17 +58,40 @@ class ExpenseTypeService {
         requestData['imageUrl'] = imageUrl.trim();
       }
 
+      print('   Sending request to: ${ApiConstants.createExpenseType}');
+      print('   Request data: $requestData');
+
       final response = await ApiService.post(
         ApiConstants.createExpenseType,
         requestData,
       );
 
-      return {
-        'success': true,
-        'message': response['message'] ?? 'Expense type created successfully',
-        'expenseType': response['expenseType'],
-      };
+      print('   Response received:');
+      print('   Success: ${response['success']}');
+      print('   Message: ${response['message']}');
+      print('   StatusCode: ${response['statusCode'] ?? "N/A"}');
+
+      // Check if response indicates success
+      if (response['success'] == true) {
+        print('✅ Expense type created successfully');
+        return {
+          'success': true,
+          'message': response['message'] ?? 'Expense type created successfully',
+          'expenseType': response['expenseType'],
+        };
+      } else {
+        // Handle error response from API
+        print('❌ Failed to create expense type: ${response['message']}');
+        return {
+          'success': false,
+          'message': response['message'] ?? 'Failed to create expense type',
+          'statusCode': response['statusCode'],
+        };
+      }
     } catch (e) {
+      print('\n❌ ===== ERROR CREATING EXPENSE TYPE (Frontend) =====');
+      print('   Error: $e');
+      print('===================================================\n');
       return {
         'success': false,
         'message': e.toString().replaceFirst('Exception: ', ''),
