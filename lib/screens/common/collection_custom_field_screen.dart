@@ -5,7 +5,7 @@ import '../../widgets/add_custom_field_dialog.dart';
 import '../../widgets/add_collection_dialog.dart';
 import '../../services/custom_field_service.dart';
 
-class CollectionCustomFieldScreen extends StatelessWidget {
+class CollectionCustomFieldScreen extends StatefulWidget {
   final bool showAppBar;
   final VoidCallback? onBackPressed;
   
@@ -16,10 +16,22 @@ class CollectionCustomFieldScreen extends StatelessWidget {
   });
 
   @override
+  State<CollectionCustomFieldScreen> createState() => CollectionCustomFieldScreenState();
+}
+
+class CollectionCustomFieldScreenState extends State<CollectionCustomFieldScreen> {
+  final GlobalKey<_CollectionCustomFieldScreenContentState> _contentKey = GlobalKey<_CollectionCustomFieldScreenContentState>();
+
+  void refresh() {
+    _contentKey.currentState?.refresh();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return _CollectionCustomFieldScreenContent(
-      showAppBar: showAppBar,
-      onBackPressed: onBackPressed,
+      key: _contentKey,
+      showAppBar: widget.showAppBar,
+      onBackPressed: widget.onBackPressed,
     );
   }
 }
@@ -29,6 +41,7 @@ class _CollectionCustomFieldScreenContent extends StatefulWidget {
   final VoidCallback? onBackPressed;
   
   const _CollectionCustomFieldScreenContent({
+    super.key,
     required this.showAppBar,
     this.onBackPressed,
   });
@@ -60,6 +73,10 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void refresh() {
+    _loadCustomFields();
   }
 
   Future<void> _loadCustomFields() async {
@@ -161,70 +178,6 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
         },
       ),
     );
-  }
-
-  void _onAddToCollection(Map<String, dynamic> customField) {
-    // Open Add Collection dialog with this custom field
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AddCollectionDialog(
-        selectedCustomFields: [customField],
-        onSuccess: () {
-          // Collection created successfully
-        },
-      ),
-    );
-  }
-
-  Future<void> _onRemoveFromCollection(Map<String, dynamic> customField) async {
-    final fieldName = customField['name']?.toString() ?? '';
-    final customFieldId = customField['id']?.toString() ?? '';
-    
-    try {
-      final result = await CustomFieldService.updateCustomField(
-        customFieldId,
-        useInCollections: false,
-      );
-
-      if (mounted) {
-        if (result['success'] == true) {
-          setState(() {
-            final index = _customFields.indexWhere((field) => field['id'] == customField['id']);
-            if (index != -1) {
-              _customFields[index]['useInCollections'] = false;
-            }
-          });
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Custom field "$fieldName" removed from collection form'),
-              backgroundColor: AppTheme.secondaryColor,
-              duration: const Duration(seconds: 2),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['message'] ?? 'Error removing custom field from collection'),
-              backgroundColor: AppTheme.errorColor,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: AppTheme.errorColor,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _onToggleActive(Map<String, dynamic> customField, bool isActive) async {
@@ -525,19 +478,9 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
                           runSpacing: 8,
                           children: [
                             _buildButtonReferenceItem(
-                              icon: Icons.add,
-                              color: AppTheme.primaryColor,
-                              label: 'Add to Collection',
-                            ),
-                            _buildButtonReferenceItem(
-                              icon: Icons.remove,
-                              color: AppTheme.errorColor,
-                              label: 'Remove from Collection',
-                            ),
-                            _buildButtonReferenceItem(
-                              icon: Icons.remove_circle_outline,
-                              color: AppTheme.warningColor,
-                              label: 'Deactivate',
+                              icon: Icons.toggle_on,
+                              color: AppTheme.secondaryColor,
+                              label: 'Active/Inactive Toggle',
                             ),
                             _buildButtonReferenceItem(
                               icon: Icons.edit_outlined,
@@ -564,21 +507,9 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
                         ),
                         const SizedBox(width: 8),
                         _buildButtonReferenceItem(
-                          icon: Icons.add,
-                          color: AppTheme.primaryColor,
-                          label: 'Add to Collection',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildButtonReferenceItem(
-                          icon: Icons.remove,
-                          color: AppTheme.errorColor,
-                          label: 'Remove from Collection',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildButtonReferenceItem(
-                          icon: Icons.remove_circle_outline,
-                          color: AppTheme.warningColor,
-                          label: 'Deactivate',
+                          icon: Icons.toggle_on,
+                          color: AppTheme.secondaryColor,
+                          label: 'Active/Inactive Toggle',
                         ),
                         const SizedBox(width: 12),
                         _buildButtonReferenceItem(
@@ -766,33 +697,33 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  if (!isActive)
-                                    _buildAddButton(
-                                      onTap: () => _onToggleActive(customField, true),
-                                      isMobileView: isMobileView,
-                                    ),
-                                  if (isActive) ...[
-                                    _buildAddToCollectionButton(
-                                      onTap: () => _onAddToCollection(customField),
-                                      isMobileView: isMobileView,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    _buildRemoveFromCollectionButton(
-                                      onTap: () => _onRemoveFromCollection(customField),
-                                      isMobileView: isMobileView,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    _buildRemoveButton(
-                                      onTap: () => _onToggleActive(customField, false),
-                                      isMobileView: isMobileView,
-                                    ),
-                                  ],
-                                  const SizedBox(width: 4),
+                                  // Active/Inactive Toggle Switch
+                                  Row(
+                                    children: [
+                                      Text(
+                                        isActive ? 'Active' : 'Inactive',
+                                        style: AppTheme.bodySmall.copyWith(
+                                          color: isActive ? AppTheme.secondaryColor : AppTheme.textSecondary,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Switch(
+                                        value: isActive,
+                                        onChanged: (value) => _onToggleActive(customField, value),
+                                        activeColor: AppTheme.secondaryColor,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Edit Button
                                   _buildEditButton(
                                     onTap: () => _onEditCustomField(customField),
                                     isMobileView: isMobileView,
                                   ),
                                   const SizedBox(width: 4),
+                                  // Delete Button
                                   _buildDeleteButton(
                                     onTap: () => _onDeleteCustomField(customField),
                                     isMobileView: isMobileView,
@@ -856,89 +787,6 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
     );
   }
 
-  Widget _buildAddButton({
-    required VoidCallback onTap,
-    required bool isMobileView,
-  }) {
-    return Padding(
-      padding: EdgeInsets.only(top: isMobileView ? 2 : 0),
-      child: TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: AppTheme.secondaryColor,
-          padding: EdgeInsets.all(isMobileView ? 8 : 6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(isMobileView ? 10 : 8),
-          ),
-          minimumSize: Size(isMobileView ? 36 : 34, isMobileView ? 36 : 34),
-        ),
-        child: const Icon(Icons.add_circle_outline, size: 16),
-      ),
-    );
-  }
-
-  Widget _buildRemoveButton({
-    required VoidCallback onTap,
-    required bool isMobileView,
-  }) {
-    return Padding(
-      padding: EdgeInsets.only(top: isMobileView ? 2 : 0),
-      child: TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: AppTheme.warningColor,
-          padding: EdgeInsets.all(isMobileView ? 8 : 6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(isMobileView ? 10 : 8),
-          ),
-          minimumSize: Size(isMobileView ? 36 : 34, isMobileView ? 36 : 34),
-        ),
-        child: const Icon(Icons.remove_circle_outline, size: 16),
-      ),
-    );
-  }
-
-  Widget _buildAddToCollectionButton({
-    required VoidCallback onTap,
-    required bool isMobileView,
-  }) {
-    return Padding(
-      padding: EdgeInsets.only(top: isMobileView ? 2 : 0),
-      child: TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: AppTheme.primaryColor,
-          padding: EdgeInsets.all(isMobileView ? 8 : 6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(isMobileView ? 10 : 8),
-          ),
-          minimumSize: Size(isMobileView ? 36 : 34, isMobileView ? 36 : 34),
-        ),
-        child: const Icon(Icons.add, size: 16),
-      ),
-    );
-  }
-
-  Widget _buildRemoveFromCollectionButton({
-    required VoidCallback onTap,
-    required bool isMobileView,
-  }) {
-    return Padding(
-      padding: EdgeInsets.only(top: isMobileView ? 2 : 0),
-      child: TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: AppTheme.errorColor,
-          padding: EdgeInsets.all(isMobileView ? 8 : 6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(isMobileView ? 10 : 8),
-          ),
-          minimumSize: Size(isMobileView ? 36 : 34, isMobileView ? 36 : 34),
-        ),
-        child: const Icon(Icons.remove, size: 16),
-      ),
-    );
-  }
 
   Widget _buildButtonReferenceItem({
     required IconData icon,

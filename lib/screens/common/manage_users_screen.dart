@@ -1915,16 +1915,148 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
           );
         }
       } else if (event == 'sendInvite') {
+        final userId = result['userId']?.toString();
         final email = result['email']?.toString();
+        
         if (mounted) {
+          // Show loading indicator
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                email != null && email.isNotEmpty
-                    ? 'Invite queued for $email'
-                    : 'Invite request sent',
+              content: Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text('Sending invite to ${email ?? "user"}...'),
+                ],
               ),
               backgroundColor: AppTheme.primaryColor,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        
+        // Actually call the API to send invite
+        try {
+          print('📧 [RESEND INVITE] Calling API with userId: $userId, email: $email');
+          
+          final inviteResult = await AuthService.sendInvite(
+            userId: userId,
+            email: email,
+          );
+          
+          print('📧 [RESEND INVITE] API Response: $inviteResult');
+          
+          if (!mounted) return;
+          
+          if (inviteResult['success'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            inviteResult['message'] ?? 
+                            'Invite email sent successfully!',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Check inbox (and spam folder) for ${email ?? "the email"}',
+                      style: const TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                  ],
+                ),
+                backgroundColor: AppTheme.secondaryColor,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          } else {
+            final errorMessage = inviteResult['message'] ?? 'Failed to send invite email';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Failed to send invite email',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      errorMessage,
+                      style: const TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                    if (errorMessage.toLowerCase().contains('gmail') || 
+                        errorMessage.toLowerCase().contains('authentication'))
+                      const SizedBox(height: 4),
+                    if (errorMessage.toLowerCase().contains('gmail') || 
+                        errorMessage.toLowerCase().contains('authentication'))
+                      const Text(
+                        '⚠️ Check backend console for email configuration instructions',
+                        style: TextStyle(fontSize: 11, color: Colors.white70, fontStyle: FontStyle.italic),
+                      ),
+                  ],
+                ),
+                backgroundColor: AppTheme.errorColor,
+                duration: const Duration(seconds: 6),
+              ),
+            );
+          }
+        } catch (e) {
+          print('❌ [RESEND INVITE] Exception: $e');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Error sending invite',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    e.toString().replaceFirst('Exception: ', ''),
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ],
+              ),
+              backgroundColor: AppTheme.errorColor,
+              duration: const Duration(seconds: 5),
             ),
           );
         }

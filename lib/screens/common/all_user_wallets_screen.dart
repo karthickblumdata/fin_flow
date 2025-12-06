@@ -23,6 +23,7 @@ const double _walletCardAvatarBaseSize = 72;
 const double _walletCardAvatarCompactFactor = 0.88;
 
 enum WalletStatusFilter { all, active, inactive }
+enum WalletViewMode { card, row }
 
 class AllUserWalletsScreen extends StatefulWidget {
   const AllUserWalletsScreen({super.key, this.showAppBar = true});
@@ -40,6 +41,7 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
   bool _isDrawerOpen = false;
   final TextEditingController _searchController = TextEditingController();
   WalletStatusFilter _statusFilter = WalletStatusFilter.active;
+  WalletViewMode _viewMode = WalletViewMode.card; // Default to card view
   bool _isNonWalletUser = false; // Track if current user is non-wallet user
   bool _isCheckingWallet = true; // Track if wallet check is in progress
   
@@ -413,12 +415,19 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
                       ),
                     ),
                     SizedBox(height: isMobile ? 12 : 16),
-                    // Filter Chips - wrap on mobile, row on larger screens
+                    // Filter Chips and View Toggle - wrap on mobile, row on larger screens
                     isMobile
-                        ? Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _buildFilterChips(isMobile),
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: _buildFilterChips(isMobile),
+                              ),
+                              SizedBox(height: 12),
+                              _buildViewToggleButtons(isMobile),
+                            ],
                           )
                         : Row(
                             children: [
@@ -428,6 +437,8 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
                                   children: _buildFilterChips(isMobile),
                                 ),
                               ),
+                              SizedBox(width: 16),
+                              _buildViewToggleButtons(isMobile),
                             ],
                           ),
                     SizedBox(height: isMobile ? 10 : 12),
@@ -458,54 +469,84 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
                           ],
                         ),
                       )
-                      : LayoutBuilder(
-                          builder: (context, constraints) {
-                            final double maxWidth = constraints.maxWidth;
-                            final double cardSpacing = _walletCardHorizontalSpacing;
-                            
-                            // Calculate optimal card width based on screen size
-                            double targetWidth;
-                            int maxColumns;
-                            
-                            if (isMobile) {
-                              targetWidth = _walletCardMobileWidth;
-                              maxColumns = 2;
-                            } else if (isTablet) {
-                              targetWidth = _walletCardTabletWidth;
-                              maxColumns = 3;
+                      : Builder(
+                          builder: (context) {
+                            if (_viewMode == WalletViewMode.card) {
+                              return LayoutBuilder(
+                                key: ValueKey('wallet-card-view-${_filteredWallets.length}-${_statusFilter.name}'),
+                                builder: (context, constraints) {
+                                  final double maxWidth = constraints.maxWidth;
+                                  final double cardSpacing = _walletCardHorizontalSpacing;
+                                  
+                                  // Calculate optimal card width based on screen size
+                                  double targetWidth;
+                                  int maxColumns;
+                                  
+                                  if (isMobile) {
+                                    targetWidth = _walletCardMobileWidth;
+                                    maxColumns = 2;
+                                  } else if (isTablet) {
+                                    targetWidth = _walletCardTabletWidth;
+                                    maxColumns = 3;
+                                  } else {
+                                    targetWidth = _walletCardDesktopWidth;
+                                    maxColumns = 4;
+                                  }
+
+                                  // Calculate columns based on available width
+                                  int crossAxisCount = ((maxWidth + cardSpacing) / 
+                                      (targetWidth + cardSpacing)).floor();
+                                  crossAxisCount = crossAxisCount.clamp(1, maxColumns);
+
+                                  // Responsive padding
+                                  final double horizontalPadding = isMobile ? 12 : 
+                                      (isTablet ? 16 : 20);
+                                  final double verticalPadding = isMobile ? 12 : 
+                                      (isTablet ? 16 : 20);
+
+                                  return GridView.builder(
+                                    key: const PageStorageKey('wallet-card-grid'),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: horizontalPadding,
+                                      vertical: verticalPadding,
+                                    ),
+                                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: crossAxisCount,
+                                      crossAxisSpacing: cardSpacing,
+                                      mainAxisSpacing: _walletCardVerticalSpacing,
+                                      mainAxisExtent: _walletCardHeight,
+                                    ),
+                                    itemCount: _filteredWallets.length,
+                                    itemBuilder: (context, index) {
+                                      final wallet = _filteredWallets[index];
+                                      return _buildWalletCard(wallet);
+                                    },
+                                  );
+                                },
+                              );
                             } else {
-                              targetWidth = _walletCardDesktopWidth;
-                              maxColumns = 4;
+                              return ListView.builder(
+                                key: ValueKey('wallet-row-view-${_filteredWallets.length}-${_statusFilter.name}'),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isMobile ? 12 : (isTablet ? 16 : 20),
+                                  vertical: isMobile ? 12 : (isTablet ? 16 : 20),
+                                ),
+                                itemCount: _filteredWallets.length,
+                                itemBuilder: (context, index) {
+                                  final wallet = _filteredWallets[index];
+                                  final userId = wallet['userId']?['_id'] ?? wallet['userId']?['id'] ?? index.toString();
+                                  return Padding(
+                                    key: ValueKey('wallet-row-$userId-$index'),
+                                    padding: EdgeInsets.only(
+                                      bottom: index < _filteredWallets.length - 1 
+                                          ? (isMobile ? 12 : 16) 
+                                          : 0,
+                                    ),
+                                    child: _buildWalletRow(wallet, isMobile, isTablet),
+                                  );
+                                },
+                              );
                             }
-
-                            // Calculate columns based on available width
-                            int crossAxisCount = ((maxWidth + cardSpacing) / 
-                                (targetWidth + cardSpacing)).floor();
-                            crossAxisCount = crossAxisCount.clamp(1, maxColumns);
-
-                            // Responsive padding
-                            final double horizontalPadding = isMobile ? 12 : 
-                                (isTablet ? 16 : 20);
-                            final double verticalPadding = isMobile ? 12 : 
-                                (isTablet ? 16 : 20);
-
-                            return GridView.builder(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: horizontalPadding,
-                                vertical: verticalPadding,
-                              ),
-                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                crossAxisSpacing: cardSpacing,
-                                mainAxisSpacing: _walletCardVerticalSpacing,
-                                mainAxisExtent: _walletCardHeight,
-                              ),
-                              itemCount: _filteredWallets.length,
-                              itemBuilder: (context, index) {
-                                final wallet = _filteredWallets[index];
-                                return _buildWalletCard(wallet);
-                              },
-                            );
                           },
                         ),
               ),
@@ -586,6 +627,82 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildViewToggleButtons(bool isMobile) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildViewToggleButton(
+            icon: Icons.grid_view,
+            label: 'Card',
+            isSelected: _viewMode == WalletViewMode.card,
+            onTap: () => setState(() => _viewMode = WalletViewMode.card),
+            isMobile: isMobile,
+          ),
+          Container(
+            width: 1,
+            height: 24,
+            color: AppTheme.borderColor,
+          ),
+          _buildViewToggleButton(
+            icon: Icons.view_list,
+            label: 'Row',
+            isSelected: _viewMode == WalletViewMode.row,
+            onTap: () => setState(() => _viewMode = WalletViewMode.row),
+            isMobile: isMobile,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewToggleButton({
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required bool isMobile,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 10 : 12,
+          vertical: isMobile ? 6 : 8,
+        ),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primaryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: isMobile ? 16 : 18,
+              color: isSelected ? Colors.white : AppTheme.textSecondary,
+            ),
+            SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: isMobile ? 12 : 13,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : AppTheme.textSecondary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -833,6 +950,259 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
           userEmail: userEmail,
         );
       },
+    );
+  }
+
+  Widget _buildWalletRow(dynamic wallet, bool isMobile, bool isTablet) {
+    final user = wallet['userId'];
+    if (user == null) return const SizedBox.shrink();
+
+    final userId = (user['_id'] ?? user['id'] ?? '').toString();
+    final userName = (user['name'] ?? 'Unknown').toString();
+    final userEmail = (user['email'] ?? '').toString();
+    final userRole = (user['role'] ?? 'Staff').toString();
+    final balance = _parseAmount(wallet['totalBalance']);
+    final unapprovedCount = _resolveCount(
+      wallet,
+      primaryKeys: const [
+        'unapprovedCount',
+        'pendingCount',
+        'pendingTransactions',
+        'pendingApprovals',
+        'unapproved',
+        'unapprovedTransactions',
+        'unapprovedExpenses',
+      ],
+      fallbackContainers: const [
+        {'container': 'statusCounts', 'keys': ['unapproved', 'pending']},
+        {'container': 'statusSummary', 'keys': ['unapproved', 'pending']},
+      ],
+    );
+    final flaggedCount = _resolveCount(
+      wallet,
+      primaryKeys: const [
+        'flaggedCount',
+        'flagged',
+        'flaggedTransactions',
+        'flaggedExpenses',
+      ],
+      fallbackContainers: const [
+        {'container': 'statusCounts', 'keys': ['flagged']},
+        {'container': 'statusSummary', 'keys': ['flagged']},
+      ],
+    );
+    final isActive = (wallet['isActive'] == true) ||
+        (wallet['status']?.toString().toLowerCase() == 'active') ||
+        balance > 0;
+
+    // Get user initials for avatar
+    final initials = userName
+        .split(' ')
+        .take(2)
+        .map((word) => word.isNotEmpty ? word[0].toUpperCase() : '')
+        .join('');
+
+    return InkWell(
+      onTap: () {
+        _showUserActionMenu(
+          context: context,
+          userId: userId,
+          userName: userName,
+          userEmail: userEmail,
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: EdgeInsets.all(isMobile ? 12 : 16),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppTheme.borderColor,
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Avatar
+            Container(
+              width: isMobile ? 48 : 56,
+              height: isMobile ? 48 : 56,
+              decoration: BoxDecoration(
+                gradient: AppTheme.primaryGradient,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                initials.isNotEmpty ? initials : '?',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isMobile ? 16 : 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            SizedBox(width: isMobile ? 12 : 16),
+            // User Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          userName,
+                          style: TextStyle(
+                            fontSize: isMobile ? 15 : 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Active/Inactive Badge
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 8 : 10,
+                          vertical: isMobile ? 4 : 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isActive
+                              ? AppTheme.secondaryColor.withOpacity(0.15)
+                              : AppTheme.textSecondary.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          isActive ? 'ACTIVE' : 'INACTIVE',
+                          style: TextStyle(
+                            fontSize: isMobile ? 10 : 11,
+                            fontWeight: FontWeight.w700,
+                            color: isActive
+                                ? AppTheme.secondaryColor
+                                : AppTheme.textSecondary,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    userEmail,
+                    style: TextStyle(
+                      fontSize: isMobile ? 12 : 13,
+                      color: AppTheme.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 8),
+                  Row(
+                    children: [
+                      // Role Badge
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 8 : 10,
+                          vertical: isMobile ? 4 : 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          userRole,
+                          style: TextStyle(
+                            fontSize: isMobile ? 11 : 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      // Flagged Count
+                      if (flaggedCount > 0)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.flag_outlined,
+                              size: isMobile ? 14 : 16,
+                              color: AppTheme.errorColor,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              '$flaggedCount',
+                              style: TextStyle(
+                                fontSize: isMobile ? 12 : 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.errorColor,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                          ],
+                        ),
+                      // Unapproved Count
+                      if (unapprovedCount > 0)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.rule_folder_outlined,
+                              size: isMobile ? 14 : 16,
+                              color: AppTheme.warningColor,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              '$unapprovedCount',
+                              style: TextStyle(
+                                fontSize: isMobile ? 12 : 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.warningColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: isMobile ? 12 : 16),
+            // Balance
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  'Balance',
+                  style: TextStyle(
+                    fontSize: isMobile ? 11 : 12,
+                    color: AppTheme.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  _formatCurrency(balance),
+                  style: TextStyle(
+                    fontSize: isMobile ? 16 : 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 

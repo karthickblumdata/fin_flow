@@ -170,8 +170,8 @@ class UIPermissionChecker {
       'users': 'all_users.user_management.view',
       'roles': 'all_users.roles.view',
       // Payment Accounts
-      'payment-modes': 'settings.payment_modes.view',
-      'paymentModes': 'settings.payment_modes.view',
+      'payment-modes': 'accounts.payment_modes.view',
+      'paymentModes': 'accounts.payment_modes.view',
       'account-reports': 'accounts.view',
       'accountReports': 'accounts.view',
       // Expenses
@@ -333,7 +333,7 @@ class UIPermissionChecker {
       'smartApprovals': 'smart_approvals.transaction.view',
       'users': 'all_users.user_management.view',
       'roles': 'all_users.roles.view',
-      'paymentModes': 'settings.payment_modes.view',
+      'paymentModes': 'accounts.payment_modes.view',
       'accountReports': 'accounts.view',
       'expenseType': 'expenses.type.view',
       'expenseReport': 'expenses.report.view',
@@ -407,23 +407,67 @@ class UIPermissionChecker {
     // For accountReports, check if user has parent permission OR any child permission
     // This allows access if parent 'accounts.payment_account_reports' is selected (even without children)
     if (menuKey == 'accountReports') {
-      return permissions.any((p) => 
+      final hasAccess = permissions.any((p) => 
         p == 'accounts.view' ||
         p == 'accounts.payment_account_reports' ||
         p.startsWith('accounts.payment_account_reports.') ||
         p.startsWith('accounts.')
       ) || _hasPermission(permissions, requiredPermission);
+      
+      // Debug logging for accountReports permission check
+      if (!hasAccess) {
+        print('\n🔍 ===== ACCOUNT REPORTS PERMISSION CHECK =====');
+        print('   Menu Key: $menuKey');
+        print('   User Role: $userRole');
+        print('   Required Permission: $requiredPermission');
+        print('   User Permissions Count: ${permissions.length}');
+        print('   User Permissions: $permissions');
+        print('   Checking for: accounts.view, accounts.payment_account_reports, accounts.payment_account_reports.*, accounts.*');
+        print('   Final Access: ❌ NO');
+        print('==============================================\n');
+      } else {
+        print('\n✅ ===== ACCOUNT REPORTS PERMISSION CHECK =====');
+        print('   Menu Key: $menuKey');
+        print('   User Role: $userRole');
+        print('   Final Access: ✅ YES');
+        print('==============================================\n');
+      }
+      
+      return hasAccess;
     }
     
     // For paymentModes, check if user has any payment mode permission
     if (menuKey == 'paymentModes') {
-      return permissions.any((p) => 
-        p == 'settings.payment_modes.view' ||
-        p == 'settings.payment_modes' ||
-        p.startsWith('settings.payment_modes.') ||
+      final hasAccess = permissions.any((p) => 
+        p == 'accounts.payment_modes.view' ||
+        p == 'accounts.payment_modes' ||
+        p.startsWith('accounts.payment_modes.') ||
         p == 'accounts.payment_account_reports' ||
-        p.startsWith('accounts.payment_account_reports.')
+        p.startsWith('accounts.payment_account_reports.') ||
+        p == 'accounts.view' ||
+        p.startsWith('accounts.')
       ) || _hasPermission(permissions, requiredPermission);
+      
+      // Debug logging for paymentModes permission check
+      if (!hasAccess) {
+        print('\n🔍 ===== PAYMENT MODES PERMISSION CHECK =====');
+        print('   Menu Key: $menuKey');
+        print('   User Role: $userRole');
+        print('   Required Permission: $requiredPermission');
+        print('   User Permissions Count: ${permissions.length}');
+        print('   User Permissions: $permissions');
+        print('   Checking for: accounts.payment_modes.view, accounts.payment_modes, accounts.payment_modes.*, accounts.*');
+        print('   Final Access: ❌ NO');
+        print('============================================\n');
+      } else {
+        print('\n✅ ===== PAYMENT MODES PERMISSION CHECK =====');
+        print('   Menu Key: $menuKey');
+        print('   User Role: $userRole');
+        print('   Final Access: ✅ YES');
+        print('============================================\n');
+      }
+      
+      return hasAccess;
     }
     
     // For users (User Management), check if user has ANY all_users.user_management permission
@@ -580,9 +624,9 @@ class UIPermissionChecker {
     }
     
     return permissions.any((p) => 
-      p == 'settings.payment_modes.view' || 
-      p == 'settings.payment_modes' ||
-      p.startsWith('settings.payment_modes.') ||
+      p == 'accounts.payment_modes.view' || 
+      p == 'accounts.payment_modes' ||
+      p.startsWith('accounts.payment_modes.') ||
       p == 'accounts.view' ||
       p == 'accounts.report.view' ||
       p == 'accounts.payment_account_reports' ||

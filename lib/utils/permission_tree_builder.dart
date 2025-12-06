@@ -658,6 +658,36 @@ class PermissionTreeBuilder {
                 ),
               ],
             ),
+            // Payment Modes
+            PermissionNode(
+              id: 'accounts.payment_modes',
+              label: 'Payment Modes',
+              isExpanded: false,
+              children: [
+                PermissionNode(
+                  id: 'accounts.payment_modes.create',
+                  label: 'Add',
+                ),
+                PermissionNode(
+                  id: 'accounts.payment_modes.edit',
+                  label: 'Edit',
+                ),
+                PermissionNode(
+                  id: 'accounts.payment_modes.delete',
+                  label: 'Delete',
+                ),
+                PermissionNode(
+                  id: 'accounts.payment_modes.manage',
+                  label: 'Manage',
+                  description: 'Full access to add, edit, and delete payment modes',
+                ),
+                PermissionNode(
+                  id: 'accounts.payment_modes.view',
+                  label: 'View',
+                  description: 'Read-only access',
+                ),
+              ],
+            ),
           ],
         ),
         // Expenses Section

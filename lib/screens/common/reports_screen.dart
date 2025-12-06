@@ -491,8 +491,9 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
         ? DateTime.parse(col['createdAt']).toLocal()
         : DateTime.now();
     
-    // Check if this is a system collection (created by System)
+    // Check if this is a system collection or systematic entry (created by System)
     final isSystemCollection = col['isSystemCollection'] == true || col['collectedBy'] == null;
+    final isSystematicEntry = col['isSystematicEntry'] == true || col['collectionType'] == 'systematic';
     
     // Get 'from' field (collector name) - fallback to collectedBy if from is not set
     final fromField = col['from'];
@@ -503,11 +504,11 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
         ? (fromField['role'] ?? 'Staff')
         : (col['collectedBy'] != null ? (col['collectedBy']['role'] ?? 'Staff') : 'Staff');
     
-    // Created by: System if system collection, otherwise collector
-    final createdByName = isSystemCollection 
+    // Created by: System if system collection or systematic entry, otherwise collector
+    final createdByName = (isSystemCollection || isSystematicEntry)
         ? 'System'
         : (col['collectedBy'] != null ? (col['collectedBy']['name'] ?? 'Unknown') : 'Unknown');
-    final createdByRole = isSystemCollection 
+    final createdByRole = (isSystemCollection || isSystematicEntry)
         ? 'System'
         : (col['collectedBy'] != null ? (col['collectedBy']['role'] ?? 'Staff') : 'Staff');
     

@@ -81,6 +81,16 @@ class _PaymentModesScreenContentState extends State<_PaymentModesScreenContent> 
               receiverName = assignedReceiver['name'] as String?;
             }
             
+            // Get display field - prefer direct field, fallback to parsing from description
+            List<String> displayList = ['Collection']; // Default
+            if (mode.containsKey('display') && mode['display'] is List) {
+              // Use direct display field from backend (new format)
+              displayList = (mode['display'] as List).map((e) => e.toString()).toList();
+            } else if (parsed['display'] is List && (parsed['display'] as List).isNotEmpty) {
+              // Fallback: parse from description (old format for backward compatibility)
+              displayList = (parsed['display'] as List).map((e) => e.toString()).toList();
+            }
+            
             return {
               'id': mode['_id'] ?? mode['id'],
               'name': mode['modeName'] ?? '',
@@ -89,7 +99,7 @@ class _PaymentModesScreenContentState extends State<_PaymentModesScreenContent> 
               'isActive': mode['isActive'] ?? true,
               'receiver': receiverName ?? 'Admin 1',
               'mode': parsed['mode'] ?? 'UPI',
-              'display': parsed['display'] ?? ['Collection'],
+              'display': displayList, // Use direct field or parsed value
               'upiId': parsed['upiId'],
               'assignedReceiver': mode['assignedReceiver'] is Map 
                   ? mode['assignedReceiver']['_id'] 

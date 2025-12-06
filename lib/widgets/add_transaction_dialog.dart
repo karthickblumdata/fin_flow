@@ -154,7 +154,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
     });
 
     try {
-      final result = await PaymentModeService.getPaymentModes();
+      final result = await PaymentModeService.getPaymentModes(displayType: 'Transaction');
       if (result['success'] == true && mounted) {
         final paymentModes = result['paymentModes'] as List<dynamic>? ?? [];
         setState(() {

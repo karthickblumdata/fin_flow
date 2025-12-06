@@ -3,9 +3,19 @@ import '../utils/api_constants.dart';
 
 class PaymentModeService {
   /// Get all payment modes
-  static Future<Map<String, dynamic>> getPaymentModes() async {
+  /// [displayType] - Filter by display type: 'Collection', 'Expenses', or 'Transaction'
+  static Future<Map<String, dynamic>> getPaymentModes({String? displayType}) async {
     try {
-      final response = await ApiService.get(ApiConstants.getPaymentModes);
+      String url = ApiConstants.getPaymentModes;
+      if (displayType != null && displayType.isNotEmpty) {
+        // Map frontend display types to backend values
+        String backendDisplayType = displayType;
+        if (displayType == 'Expense') {
+          backendDisplayType = 'Expenses'; // Backend uses 'Expenses'
+        }
+        url += '?displayType=$backendDisplayType';
+      }
+      final response = await ApiService.get(url);
 
       if (response['success'] == true) {
         return {
@@ -74,21 +84,27 @@ class PaymentModeService {
       }
       // If autoPay is false, don't send assignedReceiver at all
 
-      // Store additional UI fields in description if not already set
-      // or extend description with additional info
-      if (mode != null || display != null || upiId != null) {
+      // Send display array directly to backend (new field)
+      if (display != null && display.isNotEmpty) {
+        // Map frontend display types to backend values
+        List<String> backendDisplay = display.map((d) {
+          if (d == 'Expense') return 'Expenses'; // Backend uses 'Expenses'
+          return d;
+        }).toList();
+        body['display'] = backendDisplay;
+      }
+
+      // Store additional UI fields (mode, upiId) in description for backward compatibility
+      if (mode != null || upiId != null) {
         final additionalInfo = <String>[];
         if (mode != null) additionalInfo.add('mode:$mode');
-        if (display != null && display.isNotEmpty) {
-          additionalInfo.add('display:${display.join(",")}');
-        }
         if (upiId != null && upiId.isNotEmpty) {
           additionalInfo.add('upiId:$upiId');
         }
         
         if (body.containsKey('description') && body['description'].isNotEmpty) {
           body['description'] = '${body['description']}|${additionalInfo.join('|')}';
-        } else {
+        } else if (additionalInfo.isNotEmpty) {
           body['description'] = additionalInfo.join('|');
         }
       }
@@ -141,13 +157,20 @@ class PaymentModeService {
         body['assignedReceiver'] = assignedReceiver.isEmpty ? null : assignedReceiver;
       }
 
-      // Handle description and additional fields
-      if (description != null || mode != null || display != null || upiId != null) {
+      // Send display array directly to backend (new field)
+      if (display != null && display.isNotEmpty) {
+        // Map frontend display types to backend values
+        List<String> backendDisplay = display.map((d) {
+          if (d == 'Expense') return 'Expenses'; // Backend uses 'Expenses'
+          return d;
+        }).toList();
+        body['display'] = backendDisplay;
+      }
+
+      // Handle description and additional fields (mode, upiId) for backward compatibility
+      if (description != null || mode != null || upiId != null) {
         final additionalInfo = <String>[];
         if (mode != null) additionalInfo.add('mode:$mode');
-        if (display != null && display.isNotEmpty) {
-          additionalInfo.add('display:${display.join(",")}');
-        }
         if (upiId != null && upiId.isNotEmpty) {
           additionalInfo.add('upiId:$upiId');
         }
@@ -246,10 +269,32 @@ class PaymentModeService {
     result['description'] = descriptionParts.join('|');
     result['mode'] = metadata['mode'];
     result['upiId'] = metadata['upiId'];
+    // Parse display from description for backward compatibility (old data)
     if (metadata.containsKey('display')) {
       result['display'] = metadata['display']!.split(',').where((e) => e.isNotEmpty).toList();
     }
 
     return result;
+  }
+  
+  /// Extract display field from payment mode (prefer direct field, fallback to description parsing)
+  static List<String> getDisplayFromPaymentMode(Map<String, dynamic> paymentMode) {
+    // First check if display field exists directly (new format)
+    if (paymentMode.containsKey('display') && paymentMode['display'] is List) {
+      final displayList = paymentMode['display'] as List;
+      return displayList.map((e) => e.toString()).toList();
+    }
+    
+    // Fallback: parse from description (old format)
+    final description = paymentMode['description']?.toString();
+    if (description != null && description.isNotEmpty) {
+      final parsed = parseDescription(description);
+      if (parsed['display'] is List && (parsed['display'] as List).isNotEmpty) {
+        return (parsed['display'] as List).map((e) => e.toString()).toList();
+      }
+    }
+    
+    // Default: return Collection
+    return ['Collection'];
   }
 }

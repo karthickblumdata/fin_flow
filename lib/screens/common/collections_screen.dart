@@ -58,11 +58,12 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
         ? DateTime.parse(collection['createdAt']).toLocal()
         : DateTime.now();
     
-    // Check if this is a system collection (created by System)
+    // Check if this is a system collection or systematic entry (created by System)
     final collectedBy = collection['collectedBy'];
     final isSystemCollection = collection['isSystemCollection'] == true || collectedBy == null;
+    final isSystematicEntry = collection['isSystematicEntry'] == true || collection['collectionType'] == 'systematic';
     String createdByName = 'Unknown';
-    if (isSystemCollection) {
+    if (isSystemCollection || isSystematicEntry) {
       createdByName = 'System';
     } else if (collectedBy is Map) {
       final collectedByMap = collectedBy as Map;

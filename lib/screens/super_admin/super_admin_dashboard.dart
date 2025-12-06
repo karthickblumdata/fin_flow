@@ -257,6 +257,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     with TickerProviderStateMixin {
   NavItem _selectedItem = NavItem.dashboard;
   final GlobalKey<PendingApprovalsScreenState> _pendingApprovalsRefreshKey = GlobalKey<PendingApprovalsScreenState>();
+  final GlobalKey<CollectionCustomFieldScreenState> _collectionCustomFieldRefreshKey = GlobalKey<CollectionCustomFieldScreenState>();
   String? _highlightRole; // Role to highlight when navigating to Roles screen
   bool _walletExpanded = false;
   bool _usersExpanded = false;
@@ -2490,198 +2491,62 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           }
         });
 
-        // Listen to specific financial data updates
+        // Listen to specific financial data updates - Unified Auto-Refresh Handler
         final socket = SocketService.socket;
         if (socket != null) {
+          // Expense events
           socket.on('expenseUpdate', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              // Refresh if viewing wallet (self or all) or expense report
-              final isSelfWallet = _selectedItem == NavItem.walletSelf;
-              final isExpenseReport = _selectedItem == NavItem.expenseReport;
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (isSelfWallet || isExpenseReport || _selectedItem == NavItem.walletAll) {
-                // Force refresh to get real-time data, bypass cache
-                _loadFinancialData(forceRefresh: true, isSelfWallet: isSelfWallet);
-              }
-            }
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
           });
-
-          socket.on('transactionUpdate', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (_selectedItem == NavItem.accountReports) {
-                // Refresh Account Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else {
-                _loadFinancialData(isSelfWallet: _selectedItem == NavItem.walletSelf);
-              }
-            }
-          });
-
-          socket.on('collectionUpdate', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (_selectedItem == NavItem.accountReports) {
-                // Refresh Account Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else {
-                _loadFinancialData(isSelfWallet: _selectedItem == NavItem.walletSelf);
-              }
-            }
-          });
-
           socket.on('expenseCreated', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              // Refresh if viewing wallet (self or all) or expense report
-              final isSelfWallet = _selectedItem == NavItem.walletSelf;
-              final isExpenseReport = _selectedItem == NavItem.expenseReport;
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (isSelfWallet || isExpenseReport || _selectedItem == NavItem.walletAll) {
-                // Force refresh to get real-time data, bypass cache
-                _loadFinancialData(forceRefresh: true, isSelfWallet: isSelfWallet);
-              }
-            }
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
           });
-
-          socket.on('transactionCreated', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (_selectedItem == NavItem.accountReports) {
-                // Refresh Account Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else {
-                _loadFinancialData(isSelfWallet: _selectedItem == NavItem.walletSelf);
-              }
-            }
-          });
-
-          socket.on('collectionCreated', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (_selectedItem == NavItem.accountReports) {
-                // Refresh Account Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else {
-                _loadFinancialData(isSelfWallet: _selectedItem == NavItem.walletSelf);
-              }
-            }
-          });
-
           socket.on('expenseUpdated', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              // Refresh if viewing wallet (self or all) or expense report
-              final isSelfWallet = _selectedItem == NavItem.walletSelf;
-              final isExpenseReport = _selectedItem == NavItem.expenseReport;
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (isSelfWallet || isExpenseReport || _selectedItem == NavItem.walletAll) {
-                // Force refresh to get real-time data, bypass cache
-                _loadFinancialData(forceRefresh: true, isSelfWallet: isSelfWallet);
-              }
-            }
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
           });
 
+          // Transaction events
+          socket.on('transactionUpdate', (data) {
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
+          });
+          socket.on('transactionCreated', (data) {
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
+          });
           socket.on('transactionUpdated', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (_selectedItem == NavItem.accountReports) {
-                // Refresh Account Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else {
-                _loadFinancialData(isSelfWallet: _selectedItem == NavItem.walletSelf);
-              }
-            }
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
           });
 
+          // Collection events
+          socket.on('collectionUpdate', (data) {
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
+          });
+          socket.on('collectionCreated', (data) {
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
+          });
           socket.on('collectionUpdated', (data) {
-            if (mounted) {
-              // Refresh dashboard data when changes occur
-              _loadDashboardData();
-              
-              // ALWAYS refresh financial summary for dashboard card
-              _loadUserFinancialSummary();
-              
-              if (_selectedItem == NavItem.walletOverview) {
-                // Refresh All Wallet Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else if (_selectedItem == NavItem.accountReports) {
-                // Refresh Account Reports when changes occur
-                _loadFinancialData(isSelfWallet: false);
-              } else {
-                _loadFinancialData(isSelfWallet: _selectedItem == NavItem.walletSelf);
-              }
-            }
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
           });
 
-          // Listen to expense type updates
+          // Custom Field events
+          socket.on('customFieldUpdate', (data) {
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
+          });
+          socket.on('customFieldCreated', (data) {
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
+          });
+          socket.on('customFieldUpdated', (data) {
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
+          });
+          socket.on('customFieldDeleted', (data) {
+            if (mounted) _autoRefreshCurrentScreen(forceRefresh: true);
+          });
+
+          // Expense Type events
           SocketService.onExpenseTypeUpdate((data) {
             if (mounted) {
               final event = data['event']?.toString() ?? '';
               if (event == 'created' || event == 'updated' || event == 'deleted') {
-                _loadExpenseTypes();
+                _autoRefreshCurrentScreen(forceRefresh: true);
               }
             }
           });
@@ -3828,7 +3693,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             };
           }
           if (itemMap['type'] == 'Collections') {
-            // Get collectedBy name properly
+            // Check if this is a system collection or systematic entry (created by System)
+            final isSystemCollection = itemMap['isSystemCollection'] == true || itemMap['collectedBy'] == null;
+            final isSystematicEntry = itemMap['isSystematicEntry'] == true || itemMap['collectionType'] == 'systematic';
+            
+            // Get 'from' field (collector name) - this is the person who collected the money
+            // Backend may send it as an object (with name) or as a string (just the name)
+            final fromField = itemMap['from'];
+            String fromName = 'Unknown';
+            if (fromField != null) {
+              if (fromField is Map) {
+                fromName = (fromField['name'] ?? fromField['fullName'] ?? fromField['displayName'])?.toString() ?? 'Unknown';
+              } else if (fromField is String && fromField.isNotEmpty && fromField != 'Unknown') {
+                fromName = fromField; // Already a name string
+              }
+            }
+            
+            // Get collectedBy name properly (fallback if 'from' is not available)
             final collectedBy = itemMap['collectedBy'];
             String collectedByName = 'Unknown';
             if (collectedBy != null) {
@@ -3838,6 +3719,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 collectedByName = 'Unknown'; // ObjectId string, can't get name
               }
             }
+            
+            // Use 'from' field if available, otherwise fallback to collectedBy
+            final finalFromName = (fromName != 'Unknown') ? fromName : collectedByName;
             
             // Get assignedReceiver name properly
             final assignedReceiver = itemMap['assignedReceiver'];
@@ -3861,11 +3745,39 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               }
             }
             
+            // Created by: System if system collection or systematic entry, otherwise collector
+            // IMPORTANT: If it's a systematic entry, ALWAYS show "System", never "Unknown"
+            String createdByName;
+            if (isSystemCollection || isSystematicEntry) {
+              createdByName = 'System';
+            } else {
+              // For regular collections, use collectedBy name
+              createdByName = collectedByName;
+              // If collectedByName is "Unknown", it might be a systematic entry that wasn't properly flagged
+              // Check by looking at collectionType or other indicators
+              if (createdByName == 'Unknown') {
+                final collectionType = itemMap['collectionType']?.toString() ?? '';
+                final isAutoPay = itemMap['isAutoPay'] == true || itemMap['paymentMode']?['autoPay'] == true;
+                final mode = itemMap['mode']?.toString() ?? '';
+                // If it's a systematic type or has autoPay enabled with non-Cash mode, treat as systematic
+                if (collectionType == 'systematic' || (isAutoPay && mode != 'Cash')) {
+                  createdByName = 'System';
+                }
+              }
+            }
+            
+            // Also fix "from" field: if it's systematic entry and fromName is "Unknown", try to get from collectedBy
+            String finalFromNameForDisplay = finalFromName;
+            if ((isSystemCollection || isSystematicEntry) && finalFromName == 'Unknown') {
+              // For systematic entries, if from is Unknown, use collectedBy as fallback
+              finalFromNameForDisplay = (collectedByName != 'Unknown') ? collectedByName : 'System';
+            }
+            
             return <String, dynamic>{
               ...itemMap,
-              'from': collectedByName,
+              'from': finalFromNameForDisplay, // Use 'from' field if available, otherwise collectedBy, or System for systematic entries
               'to': receiverName,
-              'createdBy': collectedByName, // Add createdBy field
+              'createdBy': createdByName, // System for systematic entries, never "Unknown"
               'approvedBy': approvedByName.isNotEmpty ? approvedByName : (itemMap['approvedByName']?.toString() ?? ''),
             };
           }
@@ -5334,6 +5246,69 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     }
   }
 
+  /// Unified auto-refresh handler - refreshes current screen based on _selectedItem
+  /// This method is called from all socket events to auto-refresh the current screen
+  void _autoRefreshCurrentScreen({bool forceRefresh = true}) {
+    if (!mounted) return;
+
+    debugPrint('🔄 [AUTO REFRESH] Current screen: $_selectedItem');
+
+    // Always refresh dashboard data and financial summary for dashboard card
+    _loadDashboardData();
+    _loadUserFinancialSummary();
+
+    // Refresh based on current screen
+    switch (_selectedItem) {
+      case NavItem.dashboard:
+        // Dashboard already refreshed above
+        break;
+
+      case NavItem.walletOverview:
+        // All Wallet Report
+        _loadFinancialData(forceRefresh: forceRefresh, isSelfWallet: false);
+        break;
+
+      case NavItem.walletSelf:
+        // Self Wallet
+        _loadFinancialData(forceRefresh: forceRefresh, isSelfWallet: true);
+        break;
+
+      case NavItem.walletAll:
+        // All User Wallets
+        _loadFinancialData(forceRefresh: forceRefresh, isSelfWallet: false);
+        break;
+
+      case NavItem.accountReports:
+        // Account Reports
+        _loadFinancialData(forceRefresh: forceRefresh, isSelfWallet: false);
+        break;
+
+      case NavItem.expenseReport:
+        // Expense Report
+        _loadFinancialData(forceRefresh: forceRefresh, isSelfWallet: false);
+        break;
+
+      case NavItem.expenseType:
+        // Expense Types
+        _loadExpenseTypes();
+        break;
+
+      case NavItem.collectionCustomField:
+        // Collection Custom Fields
+        _collectionCustomFieldRefreshKey.currentState?.refresh();
+        break;
+
+      case NavItem.smartApprovals:
+        // Smart Approvals (Pending Approvals)
+        _pendingApprovalsRefreshKey.currentState?.refresh();
+        break;
+
+      default:
+        // Other screens - no specific refresh needed
+        break;
+    }
+  }
+
   /// Auto-refresh method with debouncing to prevent excessive API calls
   /// This method ensures dashboard data is refreshed when changes occur
   // Auto-refresh functions removed - refresh only occurs on socket events (when changes happen)
@@ -6393,8 +6368,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         } else {
           unapprovedCount++;
           debugPrint('     ⏭️ Skipped - expense not approved');
+          }
         }
-      }
       
       debugPrint('   Summary:');
       debugPrint('     Total items: ${source.length}');
@@ -10011,29 +9986,29 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                title,
+        title,
                 style: AppTheme.bodyMedium.copyWith(
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+          color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
                   fontSize: 14,
-                ),
-              ),
+        ),
+      ),
             ),
             if (badge != null && badge > 0)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppTheme.errorColor,
-                  borderRadius: BorderRadius.circular(12),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.errorColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                badge.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
                 ),
-                child: Text(
-                  badge.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              ),
               ),
           ],
         ),
@@ -10128,7 +10103,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           embedInDashboard: true,
         );
       case NavItem.collectionCustomField:
-        return const CollectionCustomFieldScreen(showAppBar: false);
+        return CollectionCustomFieldScreen(
+          key: _collectionCustomFieldRefreshKey,
+          showAppBar: false,
+        );
     }
   }
 
@@ -25322,51 +25300,51 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       color: Colors.transparent,
       shadowColor: Colors.transparent, // Hide Material shadow, we only need elevation for z-index
       child: DropdownButtonFormField<String>(
-        value: validatedValue,
-        isDense: true,
-        isExpanded: isMobile, // Only expand on mobile, not on desktop/tablet (to avoid Row conflicts)
-        menuMaxHeight: 300, // Limit dropdown menu height to prevent overflow
-        borderRadius: BorderRadius.circular(8), // Rounded corners for dropdown menu (like in image)
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppTheme.borderColor),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppTheme.borderColor),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-          ),
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: isMobile ? 10 : 12,
-            vertical: isMobile ? 8 : 10,
-          ),
+      value: validatedValue,
+      isDense: true,
+      isExpanded: isMobile, // Only expand on mobile, not on desktop/tablet (to avoid Row conflicts)
+      menuMaxHeight: 300, // Limit dropdown menu height to prevent overflow
+      borderRadius: BorderRadius.circular(8), // Rounded corners for dropdown menu (like in image)
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: AppTheme.borderColor),
         ),
-        items: safeItems.map((String item) {
-          final displayText = _formatStatusLabel(item);
-          return DropdownMenuItem<String>(
-            value: item,
-            child: Text(
-              displayText.isEmpty ? item : displayText, 
-              style: AppTheme.bodyMedium,
-              overflow: TextOverflow.ellipsis,
-            ),
-          );
-        }).toList(),
-        onChanged: onChanged,
-        // Ensure dropdown menu appears below the button with white background
-        dropdownColor: Colors.white,
-        icon: Icon(
-          Icons.keyboard_arrow_down,
-          color: AppTheme.textSecondary,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: AppTheme.borderColor),
         ),
-        // Menu will automatically open below the button (Flutter default behavior)
-        // alignment controls text alignment within button, not menu position
-        alignment: AlignmentDirectional.centerStart,
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
+        ),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 10 : 12,
+          vertical: isMobile ? 8 : 10,
+        ),
+      ),
+      items: safeItems.map((String item) {
+        final displayText = _formatStatusLabel(item);
+        return DropdownMenuItem<String>(
+          value: item,
+          child: Text(
+            displayText.isEmpty ? item : displayText, 
+            style: AppTheme.bodyMedium,
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }).toList(),
+      onChanged: onChanged,
+      // Ensure dropdown menu appears below the button with white background
+      dropdownColor: Colors.white,
+      icon: Icon(
+        Icons.keyboard_arrow_down,
+        color: AppTheme.textSecondary,
+      ),
+      // Menu will automatically open below the button (Flutter default behavior)
+      // alignment controls text alignment within button, not menu position
+      alignment: AlignmentDirectional.centerStart,
       ),
     );
   }
@@ -25488,9 +25466,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       color: Colors.transparent,
       shadowColor: Colors.transparent, // Hide Material shadow, we only need elevation for z-index
       child: DropdownButtonFormField<String>(
-        value: validatedValue,
-        isDense: true,
-        decoration: InputDecoration(
+      value: validatedValue,
+      isDense: true,
+      decoration: InputDecoration(
         labelText: label,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),

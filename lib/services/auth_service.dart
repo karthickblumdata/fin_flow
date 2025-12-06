@@ -592,15 +592,44 @@ class AuthService {
         includeAuth: true, // Requires authentication
       );
 
-      return {
-        'success': true,
-        'message': response['message'] ?? 'Invite email sent successfully',
-        'user': response['user'],
-      };
+      // Check if response indicates success or failure
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'message': response['message'] ?? 'Invite email sent successfully',
+          'user': response['user'],
+        };
+      } else {
+        // API returned success: false (e.g., email sending failed)
+        return {
+          'success': false,
+          'message': response['message'] ?? 'Failed to send invite email',
+          'user': response['user'],
+        };
+      }
     } catch (e) {
+      // Network error or HTTP error (400, 500, etc.)
+      String errorMessage = e.toString().replaceFirst('Exception: ', '');
+      
+      // Provide user-friendly error messages
+      if (errorMessage.contains('Gmail authentication') || 
+          errorMessage.contains('App Password') ||
+          errorMessage.contains('Invalid login')) {
+        errorMessage = 'Gmail authentication failed. Please configure Gmail App Password in backend .env file.';
+      } else if (errorMessage.contains('email service') || 
+                 errorMessage.contains('Email credentials')) {
+        errorMessage = 'Email service not configured. Please check backend email settings.';
+      } else if (errorMessage.contains('User not found') || 
+                 errorMessage.contains('404')) {
+        errorMessage = 'User not found. Please check the user email or ID.';
+      } else if (errorMessage.contains('Failed to connect') || 
+                 errorMessage.contains('network')) {
+        errorMessage = 'Unable to connect to server. Please check your internet connection.';
+      }
+      
       return {
         'success': false,
-        'message': e.toString().replaceFirst('Exception: ', ''),
+        'message': errorMessage,
       };
     }
   }

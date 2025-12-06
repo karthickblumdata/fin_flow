@@ -161,7 +161,7 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
     });
 
     try {
-      final result = await PaymentModeService.getPaymentModes();
+      final result = await PaymentModeService.getPaymentModes(displayType: 'Collection');
       if (mounted) {
         if (result['success'] == true) {
           final paymentModes = result['paymentModes'] as List<dynamic>? ?? [];

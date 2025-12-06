@@ -3959,6 +3959,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
   Map<String, dynamic> _formatCollection(dynamic collection) {
     final collectedBy = collection['collectedBy'];
     final isSystemCollection = collection['isSystemCollection'] == true || collectedBy == null;
+    final isSystematicEntry = collection['isSystematicEntry'] == true || collection['collectionType'] == 'systematic';
     
     // Get 'from' field (collector name) - fallback to collectedBy if from is not set
     final fromField = collection['from'];
@@ -3966,8 +3967,8 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
         ? (fromField['name'] ?? 'Unknown')
         : (collectedBy is Map ? (collectedBy['name'] ?? 'Unknown') : 'Unknown');
     
-    // Created by: System if system collection, otherwise collector
-    final createdByName = isSystemCollection 
+    // Created by: System if system collection or systematic entry, otherwise collector
+    final createdByName = (isSystemCollection || isSystematicEntry)
         ? 'System' 
         : (collectedBy is Map ? (collectedBy['name'] ?? 'Unknown') : 'Unknown');
     

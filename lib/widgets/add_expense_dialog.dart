@@ -118,7 +118,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
     });
 
     try {
-      final result = await PaymentModeService.getPaymentModes();
+      final result = await PaymentModeService.getPaymentModes(displayType: 'Expenses');
       
       if (mounted) {
         if (result['success'] == true) {
