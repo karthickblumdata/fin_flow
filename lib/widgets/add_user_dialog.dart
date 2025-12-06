@@ -12,7 +12,6 @@ import '../services/pincode_service.dart';
 import '../utils/api_constants.dart';
 import '../theme/app_theme.dart';
 import '../utils/profile_image_helper.dart';
-import 'user_permissions_dialog.dart';
 import 'role_selector_field.dart';
 import 'dart:async';
 
@@ -1190,10 +1189,6 @@ class _AddUserDialogState extends State<AddUserDialog> {
           });
         }
 
-        // Open permission selection dialog after user creation
-        if (mounted && userId != null && userId.toString().isNotEmpty) {
-          await _showPermissionDialog(userId.toString(), userName, userEmail, roleName);
-        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1422,10 +1417,6 @@ class _AddUserDialogState extends State<AddUserDialog> {
           });
         }
 
-        // Open permission selection dialog after user creation
-        if (mounted && userId != null && userId.toString().isNotEmpty) {
-          await _showPermissionDialog(userId.toString(), userName, userEmail, roleName);
-        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1646,10 +1637,6 @@ class _AddUserDialogState extends State<AddUserDialog> {
           });
         }
 
-        // Open permission selection dialog after user creation
-        if (mounted && userId != null && userId.toString().isNotEmpty) {
-          await _showPermissionDialog(userId.toString(), userName, userEmail, roleName);
-        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1684,66 +1671,6 @@ class _AddUserDialogState extends State<AddUserDialog> {
     });
   }
 
-  /// Show permission selection dialog after user creation
-  Future<void> _showPermissionDialog(
-    String userId,
-    String userName,
-    String userEmail,
-    String userRole,
-  ) async {
-    if (!mounted) return;
-
-    // Wait a bit for the dialog to close completely
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    if (!mounted) return;
-
-    // Show success message first
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('User created successfully. Please assign permissions.'),
-        backgroundColor: AppTheme.secondaryColor,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-
-    // Show permission dialog
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => UserPermissionsDialog(
-        userId: userId,
-        userName: userName,
-        userEmail: userEmail,
-        userRole: userRole,
-      ),
-    );
-
-    // Show success message if permissions were saved
-    if (mounted && result != null && result['success'] == true) {
-      final permissionsCount = result['permissionsCount'] ?? 0;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            permissionsCount > 0
-                ? 'Permissions assigned successfully for $userName ($permissionsCount permissions)'
-                : 'User created successfully for $userName (no permissions assigned)',
-          ),
-          backgroundColor: AppTheme.secondaryColor,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    } else if (mounted && result == null) {
-      // User closed dialog without saving - show reminder
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('User $userName created but no permissions assigned yet. You can assign permissions later from the Roles screen.'),
-          backgroundColor: AppTheme.warningColor ?? AppTheme.secondaryColor,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    }
-  }
 
   Widget _buildStatusSelector(BuildContext context) {
     final theme = Theme.of(context);

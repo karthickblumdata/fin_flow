@@ -13,7 +13,6 @@ import '../../utils/permission_mapper.dart';
 import '../../widgets/screen_back_button.dart';
 import '../../widgets/hierarchical_checkbox.dart';
 import '../../widgets/permission_preview_widget.dart';
-import '../../widgets/user_permissions_dialog.dart';
 import '../../models/permission_node.dart';
 
 class RolesScreen extends StatefulWidget {
@@ -2809,22 +2808,6 @@ class _AssignedUserTile extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Assign Permissions button
-            IconButton(
-              icon: const Icon(Icons.security, size: 20),
-              tooltip: 'Assign Permissions',
-              color: AppTheme.primaryColor,
-              onPressed: () => _showUserPermissionsDialog(
-                context,
-                userId,
-                name,
-                email ?? '',
-                role,
-              ),
-              padding: const EdgeInsets.all(8),
-              constraints: const BoxConstraints(),
-            ),
-            const SizedBox(width: 8),
             // Status badge
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -2846,53 +2829,6 @@ class _AssignedUserTile extends StatelessWidget {
     );
   }
 
-  void _showUserPermissionsDialog(
-    BuildContext context,
-    String userId,
-    String userName,
-    String userEmail,
-    String userRole,
-  ) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => UserPermissionsDialog(
-        userId: userId,
-        userName: userName,
-        userEmail: userEmail,
-        userRole: userRole,
-      ),
-    ).then((result) {
-      if (result != null && result['success'] == true) {
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Permissions updated successfully for $userName'),
-            backgroundColor: AppTheme.secondaryColor,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        
-        // Refresh the roles list to show updated permissions
-        // Call the callback if provided
-        if (onPermissionsUpdated != null) {
-          onPermissionsUpdated!();
-        }
-        
-        print('✅ Permissions updated for user: $userName ($userEmail)');
-        print('   Permissions count: ${result['permissionsCount'] ?? 'unknown'}');
-        print('   Refreshing roles list...');
-      } else if (result != null && result['success'] == false) {
-        // Show error message if update failed
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] ?? 'Failed to update permissions for $userName'),
-            backgroundColor: AppTheme.errorColor,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    });
-  }
 }
 
 class _RoleSummary {
