@@ -180,6 +180,7 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
     );
   }
 
+
   Future<void> _onToggleActive(Map<String, dynamic> customField, bool isActive) async {
     final fieldName = customField['name']?.toString() ?? '';
     final customFieldId = customField['id']?.toString() ?? '';
@@ -478,9 +479,14 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
                           runSpacing: 8,
                           children: [
                             _buildButtonReferenceItem(
-                              icon: Icons.toggle_on,
+                              icon: Icons.check_circle_outline,
                               color: AppTheme.secondaryColor,
-                              label: 'Active/Inactive Toggle',
+                              label: 'Activate',
+                            ),
+                            _buildButtonReferenceItem(
+                              icon: Icons.remove_circle_outline,
+                              color: AppTheme.warningColor,
+                              label: 'Deactivate',
                             ),
                             _buildButtonReferenceItem(
                               icon: Icons.edit_outlined,
@@ -507,9 +513,15 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
                         ),
                         const SizedBox(width: 8),
                         _buildButtonReferenceItem(
-                          icon: Icons.toggle_on,
+                          icon: Icons.check_circle_outline,
                           color: AppTheme.secondaryColor,
-                          label: 'Active/Inactive Toggle',
+                          label: 'Activate',
+                        ),
+                        const SizedBox(width: 12),
+                        _buildButtonReferenceItem(
+                          icon: Icons.remove_circle_outline,
+                          color: AppTheme.warningColor,
+                          label: 'Deactivate',
                         ),
                         const SizedBox(width: 12),
                         _buildButtonReferenceItem(
@@ -697,26 +709,13 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  // Active/Inactive Toggle Switch
-                                  Row(
-                                    children: [
-                                      Text(
-                                        isActive ? 'Active' : 'Inactive',
-                                        style: AppTheme.bodySmall.copyWith(
-                                          color: isActive ? AppTheme.secondaryColor : AppTheme.textSecondary,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Switch(
-                                        value: isActive,
-                                        onChanged: (value) => _onToggleActive(customField, value),
-                                        activeColor: AppTheme.secondaryColor,
-                                      ),
-                                    ],
+                                  // Active/Inactive Toggle Button
+                                  _buildToggleActiveButton(
+                                    customField: customField,
+                                    isActive: isActive,
+                                    isMobileView: isMobileView,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 4),
                                   // Edit Button
                                   _buildEditButton(
                                     onTap: () => _onEditCustomField(customField),
@@ -787,6 +786,33 @@ class _CollectionCustomFieldScreenContentState extends State<_CollectionCustomFi
     );
   }
 
+  Widget _buildToggleActiveButton({
+    required Map<String, dynamic> customField,
+    required bool isActive,
+    required bool isMobileView,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(top: isMobileView ? 2 : 0),
+      child: Tooltip(
+        message: isActive ? 'Deactivate' : 'Activate',
+        child: TextButton(
+          onPressed: () => _onToggleActive(customField, !isActive),
+          style: TextButton.styleFrom(
+            foregroundColor: isActive ? AppTheme.secondaryColor : AppTheme.warningColor,
+            padding: EdgeInsets.all(isMobileView ? 8 : 6),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(isMobileView ? 10 : 8),
+            ),
+            minimumSize: Size(isMobileView ? 36 : 34, isMobileView ? 36 : 34),
+          ),
+          child: Icon(
+            isActive ? Icons.check_circle_outline : Icons.remove_circle_outline,
+            size: 16,
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildButtonReferenceItem({
     required IconData icon,

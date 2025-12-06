@@ -1152,7 +1152,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           _canDeleteExpenses = canDeleteExpenses;
           _canRejectExpenses = canRejectExpenses;
           _canFlagExpenses = canFlagExpenses;
-          _canApproveExpenses = canApproveExpenses;
+          // ALL users can approve expenses (not just SuperAdmin)
+          _canApproveExpenses = true;
           _canExportExpenses = canExportExpenses;
           
           // Set Collection action permissions
@@ -1179,7 +1180,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           _canFlagReportCollection = canFlagReportCollection;
           
           // Set All Wallet Report Expenses action permissions
-          _canApproveReportExpenses = canApproveReportExpenses;
+          // ALL users can approve expenses (not just SuperAdmin)
+          _canApproveReportExpenses = true;
           _canEditReportExpenses = canEditReportExpenses;
           _canDeleteReportExpenses = canDeleteReportExpenses;
           _canRejectReportExpenses = canRejectReportExpenses;
@@ -3697,19 +3699,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             final isSystemCollection = itemMap['isSystemCollection'] == true || itemMap['collectedBy'] == null;
             final isSystematicEntry = itemMap['isSystematicEntry'] == true || itemMap['collectionType'] == 'systematic';
             
-            // Get 'from' field (collector name) - this is the person who collected the money
-            // Backend may send it as an object (with name) or as a string (just the name)
-            final fromField = itemMap['from'];
-            String fromName = 'Unknown';
-            if (fromField != null) {
-              if (fromField is Map) {
-                fromName = (fromField['name'] ?? fromField['fullName'] ?? fromField['displayName'])?.toString() ?? 'Unknown';
-              } else if (fromField is String && fromField.isNotEmpty && fromField != 'Unknown') {
-                fromName = fromField; // Already a name string
-              }
-            }
-            
-            // Get collectedBy name properly (fallback if 'from' is not available)
+            // Get collectedBy name properly
             final collectedBy = itemMap['collectedBy'];
             String collectedByName = 'Unknown';
             if (collectedBy != null) {
@@ -3719,9 +3709,6 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 collectedByName = 'Unknown'; // ObjectId string, can't get name
               }
             }
-            
-            // Use 'from' field if available, otherwise fallback to collectedBy
-            final finalFromName = (fromName != 'Unknown') ? fromName : collectedByName;
             
             // Get assignedReceiver name properly
             final assignedReceiver = itemMap['assignedReceiver'];
@@ -3746,38 +3733,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             }
             
             // Created by: System if system collection or systematic entry, otherwise collector
-            // IMPORTANT: If it's a systematic entry, ALWAYS show "System", never "Unknown"
-            String createdByName;
-            if (isSystemCollection || isSystematicEntry) {
-              createdByName = 'System';
-            } else {
-              // For regular collections, use collectedBy name
-              createdByName = collectedByName;
-              // If collectedByName is "Unknown", it might be a systematic entry that wasn't properly flagged
-              // Check by looking at collectionType or other indicators
-              if (createdByName == 'Unknown') {
-                final collectionType = itemMap['collectionType']?.toString() ?? '';
-                final isAutoPay = itemMap['isAutoPay'] == true || itemMap['paymentMode']?['autoPay'] == true;
-                final mode = itemMap['mode']?.toString() ?? '';
-                // If it's a systematic type or has autoPay enabled with non-Cash mode, treat as systematic
-                if (collectionType == 'systematic' || (isAutoPay && mode != 'Cash')) {
-                  createdByName = 'System';
-                }
-              }
-            }
-            
-            // Also fix "from" field: if it's systematic entry and fromName is "Unknown", try to get from collectedBy
-            String finalFromNameForDisplay = finalFromName;
-            if ((isSystemCollection || isSystematicEntry) && finalFromName == 'Unknown') {
-              // For systematic entries, if from is Unknown, use collectedBy as fallback
-              finalFromNameForDisplay = (collectedByName != 'Unknown') ? collectedByName : 'System';
-            }
+            final createdByName = (isSystemCollection || isSystematicEntry) ? 'System' : collectedByName;
             
             return <String, dynamic>{
               ...itemMap,
-              'from': finalFromNameForDisplay, // Use 'from' field if available, otherwise collectedBy, or System for systematic entries
+              'from': collectedByName,
               'to': receiverName,
-              'createdBy': createdByName, // System for systematic entries, never "Unknown"
+              'createdBy': createdByName, // Add createdBy field (System for systematic entries)
               'approvedBy': approvedByName.isNotEmpty ? approvedByName : (itemMap['approvedByName']?.toString() ?? ''),
             };
           }
@@ -27328,9 +27290,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         } else {
           // Check permissions based on item type for non-Super Admin
           if (itemType == 'Expenses') {
-          } else if (itemType == 'Expenses') {
-            canApprove = _canApproveExpenses;
-            canUnapprove = _canApproveExpenses;
+            // ALL users can approve expenses (not just SuperAdmin)
+            canApprove = true;
+            canUnapprove = true;
             canReject = _canRejectExpenses;
             canEdit = _canEditExpenses;
             canFlag = _canFlagExpenses;
@@ -27469,15 +27431,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             return;
           }
         } else if (!isSuperAdmin) {
-          if (itemType == 'Expenses' && !_canApproveExpenses) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('You do not have permission to approve expenses'),
-                backgroundColor: AppTheme.errorColor,
-              ),
-            );
-            return;
-          } else if (itemType == 'Collections' && !_canApproveCollection) {
+          // Expenses: ALL users can approve (permission check removed)
+          // Only check permission for Collections
+          if (itemType == 'Collections' && !_canApproveCollection) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('You do not have permission to approve collections'),
@@ -27569,14 +27525,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               ),
             );
             return;
-          } else if (itemType == 'Expenses' && !_canApproveExpenses) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('You do not have permission to unapprove expenses'),
-                backgroundColor: AppTheme.errorColor,
-              ),
-            );
-            return;
+          // Expenses: ALL users can unapprove (permission check removed)
+          // Only check permission for Collections
           } else if (itemType == 'Collections' && !_canApproveCollection) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(

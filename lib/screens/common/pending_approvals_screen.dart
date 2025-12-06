@@ -4431,7 +4431,9 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
         ? (!isCreator && (isReceiverButNotCreator || hasApprovePermission) && !isApproved && !isAccounted && !_isBulkActionInProgress)
         : itemType == 'transactions'
             ? (isReceiver && !isApproved && !isAccounted && !_isBulkActionInProgress)
-            : (hasApprovePermission && !isApproved && !isAccounted && !_isBulkActionInProgress);
+            : itemType == 'expenses'
+                ? (!isApproved && !isAccounted && !_isBulkActionInProgress) // ALL users can approve expenses
+                : (hasApprovePermission && !isApproved && !isAccounted && !_isBulkActionInProgress);
     final bool canReject = itemType == 'collections'
         ? (!isCreator && (isReceiverButNotCreator || hasRejectPermission) && !isRejected)
         : (hasRejectPermission && !isRejected);

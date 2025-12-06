@@ -82,11 +82,10 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
       if (mounted) {
         if (result['success'] == true) {
           final allFields = result['customFields'] as List<dynamic>? ?? [];
-          // Filter only active fields that are enabled for collections
+          // Filter only active fields - if active, show in collection popup
           final enabledFields = allFields.where((field) {
             final isActive = field['isActive'] == true;
-            final useInCollections = field['useInCollections'] != false; // Default to true
-            return isActive && useInCollections;
+            return isActive; // Only check isActive, not useInCollections
           }).toList();
 
           setState(() {
