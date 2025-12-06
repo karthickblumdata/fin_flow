@@ -5409,7 +5409,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     }
   }
 
-  Future<void> _loadPaymentModes() async {
+  Future<void> _loadPaymentModes({String? displayType}) async {
     if (_isLoadingPaymentModes) return;
 
     setState(() {
@@ -5417,7 +5417,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     });
 
     try {
-      final result = await PaymentModeService.getPaymentModes();
+      print('🔍 [SuperAdminDashboard] _loadPaymentModes called with displayType: $displayType');
+      final result = await PaymentModeService.getPaymentModes(displayType: displayType);
       if (!mounted) {
         return;
       }
@@ -14305,8 +14306,20 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       }
       
       // Always reload payment modes when dialog opens to ensure we have the latest data
+      // Filter by Transaction display type for transaction dialog
+      print('🔍 [Transaction Dialog] Loading payment modes with displayType: Transaction');
       if (!_isLoadingPaymentModes) {
-        await _loadPaymentModes();
+        await _loadPaymentModes(displayType: 'Transaction');
+        print('🔍 [Transaction Dialog] Payment modes loaded. Count: ${_paymentModes.length}');
+        // Force a rebuild of the dialog after payment modes are loaded
+        // The ValueListenableBuilder should handle this, but we ensure it's triggered
+      } else {
+        print('🔍 [Transaction Dialog] Payment modes already loading, waiting...');
+        // Wait for current load to complete
+        while (_isLoadingPaymentModes) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        print('🔍 [Transaction Dialog] Payment modes load completed. Count: ${_paymentModes.length}');
       }
       
       // Get current user ID to use as sender
@@ -14829,7 +14842,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                             valueListenable: _paymentModesLoadedNotifier,
                             builder: (context, _, __) {
                               // Use payment modes from database - these contain modeName like "Sales UPI", "Purchase UPI", etc.
-                              debugPrint('Building payment mode dropdown. Payment modes count: ${_paymentModes.length}');
+                              debugPrint('🔍 [Transaction Dialog] Building payment mode dropdown. Payment modes count: ${_paymentModes.length}');
+                              debugPrint('🔍 [Transaction Dialog] Is loading: $_isLoadingPaymentModes');
                               
                               final List<Map<String, dynamic>> availableModes = _paymentModes.isNotEmpty
                                   ? List<Map<String, dynamic>>.from(_paymentModes)

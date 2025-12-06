@@ -155,12 +155,15 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
   Future<void> _loadAccounts() async {
     if (!mounted) return;
     
+    print('🔍 [AddCollectionDialog] _loadAccounts() called');
     setState(() {
       _isLoadingAccounts = true;
     });
 
     try {
+      print('🔍 [AddCollectionDialog] Calling getPaymentModes with displayType: Collection');
       final result = await PaymentModeService.getPaymentModes(displayType: 'Collection');
+      print('🔍 [AddCollectionDialog] getPaymentModes response: success=${result['success']}, count=${result['paymentModes']?.length ?? 0}');
       if (mounted) {
         if (result['success'] == true) {
           final paymentModes = result['paymentModes'] as List<dynamic>? ?? [];
