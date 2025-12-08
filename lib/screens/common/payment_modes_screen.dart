@@ -42,9 +42,7 @@ class _PaymentModesScreenContentState extends State<_PaymentModesScreenContent> 
   List<Map<String, dynamic>> _paymentModes = [];
   bool _isLoading = true;
   
-  // Auto-refresh configuration
-  Timer? _autoRefreshTimer;
-  static const Duration _autoRefreshInterval = Duration(seconds: 30); // Refresh every 30 seconds
+  // Debounce configuration for socket-based refresh
   static const Duration _debounceRefreshDelay = Duration(seconds: 2); // Debounce to prevent rapid refreshes
   DateTime? _lastRefreshTime;
   
@@ -52,9 +50,6 @@ class _PaymentModesScreenContentState extends State<_PaymentModesScreenContent> 
   void initState() {
     super.initState();
     _loadPaymentModes();
-    
-    // Start auto-refresh timer
-    _startAutoRefresh();
     
     // Setup socket listeners
     _setupSocketListeners();
@@ -149,7 +144,7 @@ class _PaymentModesScreenContentState extends State<_PaymentModesScreenContent> 
   }
 
   /// Auto-refresh method with debouncing to prevent excessive API calls
-  /// This method ensures payment modes data is refreshed when changes occur
+  /// This method is called by socket events when payment modes data changes
   void _autoRefreshPaymentModes() {
     if (!mounted) return;
     
@@ -174,27 +169,8 @@ class _PaymentModesScreenContentState extends State<_PaymentModesScreenContent> 
     _loadPaymentModes();
   }
 
-  /// Start the auto-refresh timer
-  void _startAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      _autoRefreshPaymentModes();
-    });
-  }
-
-  /// Stop the auto-refresh timer
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
-  }
-
   @override
   void dispose() {
-    _stopAutoRefresh();
     super.dispose();
   }
 

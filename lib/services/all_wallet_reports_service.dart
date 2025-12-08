@@ -92,8 +92,10 @@ class AllWalletReportsService {
   }
 
   /// Get all wallet reports with optional filters
+  /// Supports single user, multiple users (comma-separated), or all users (null)
   static Future<Map<String, dynamic>> getAllWalletReportsWithFilters({
-    String? userId,
+    List<String>? userIds,
+    String? userId, // Deprecated: Use userIds instead, kept for backward compatibility
     DateTime? startDate,
     DateTime? endDate,
     String? accountId,
@@ -101,8 +103,21 @@ class AllWalletReportsService {
     try {
       final queryParams = <String, String>{};
       
-      if (userId != null && userId.isNotEmpty) {
-        queryParams['userId'] = userId;
+      // Support both new userIds parameter and legacy userId parameter
+      List<String>? finalUserIds = userIds;
+      if (finalUserIds == null && userId != null && userId.isNotEmpty) {
+        // Legacy support: convert single userId to list
+        finalUserIds = [userId];
+      }
+      
+      if (finalUserIds != null && finalUserIds.isNotEmpty) {
+        if (finalUserIds.length == 1) {
+          // Single user: send as single userId
+          queryParams['userId'] = finalUserIds.first;
+        } else {
+          // Multiple users: send as comma-separated string
+          queryParams['userId'] = finalUserIds.join(',');
+        }
       }
       if (startDate != null) {
         queryParams['startDate'] = startDate.toIso8601String();
@@ -114,7 +129,17 @@ class AllWalletReportsService {
         queryParams['accountId'] = accountId;
       }
       
-      print('📊 [ALL WALLET REPORTS] Frontend: Requesting reports with filters: userId=${userId ?? 'null'}, startDate=${startDate?.toIso8601String() ?? 'null'}, endDate=${endDate?.toIso8601String() ?? 'null'}, accountId=${accountId ?? 'null'}');
+      print('═══════════════════════════════════════════════════════════');
+      print('📊 [ALL WALLET REPORTS] Frontend: API Request');
+      print('   Endpoint: ${ApiConstants.getAllWalletReports}');
+      print('   Query Parameters:');
+      print('     - userIds: ${finalUserIds?.join(", ") ?? 'null'} (${finalUserIds?.length ?? 0} user(s))');
+      print('     - userId (query param): ${queryParams['userId'] ?? 'null'}');
+      print('     - startDate: ${startDate?.toIso8601String() ?? 'null'}');
+      print('     - endDate: ${endDate?.toIso8601String() ?? 'null'}');
+      print('     - accountId: ${accountId ?? 'null'}');
+      print('   Full QueryParams: $queryParams');
+      print('═══════════════════════════════════════════════════════════');
       
       final response = await ApiService.get(
         ApiConstants.getAllWalletReports,
@@ -124,7 +149,17 @@ class AllWalletReportsService {
       if (response['success'] == true && response['report'] != null) {
         final report = response['report'] as Map<String, dynamic>;
         
-        print('📊 [ALL WALLET REPORTS] Frontend: Received response: success=true, report=${report.toString()}, userCount=${response['userCount'] ?? 0}');
+        print('═══════════════════════════════════════════════════════════');
+        print('✅ [ALL WALLET REPORTS] Frontend: API Response Received');
+        print('   success: true');
+        print('   report:');
+        print('     - cashIn: ${report['cashIn'] ?? 0}');
+        print('     - cashOut: ${report['cashOut'] ?? 0}');
+        print('     - balance: ${report['balance'] ?? 0}');
+        print('   userCount: ${response['userCount'] ?? 0}');
+        print('   filters: ${response['filters'] ?? 'null'}');
+        print('   lastUpdated: ${response['lastUpdated'] ?? 'null'}');
+        print('═══════════════════════════════════════════════════════════');
         
         return {
           'success': true,
@@ -134,7 +169,8 @@ class AllWalletReportsService {
             'balance': (report['balance'] ?? 0.0).toDouble(),
           },
           'filters': {
-            'userId': response['filters']?['userId'] ?? userId,
+            'userId': response['filters']?['userId'] ?? queryParams['userId'],
+            'userIds': finalUserIds,
             'startDate': response['filters']?['startDate'] ?? startDate?.toIso8601String(),
             'endDate': response['filters']?['endDate'] ?? endDate?.toIso8601String(),
           },

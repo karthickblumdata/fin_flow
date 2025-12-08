@@ -601,110 +601,167 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
                       // Payment Mode
                       Text('Payment Mode', style: AppTheme.labelMedium),
                       const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceColor,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.borderColor),
-                        ),
-                        child: DropdownButtonFormField<String>(
-                          value: _selectedPaymentModeId,
-                          decoration: InputDecoration(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 16,
-                            ),
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            suffixIcon: _isLoadingPaymentModes
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: Padding(
-                                      padding: EdgeInsets.all(12.0),
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                  )
-                                : null,
-                          ),
-                          icon: const Icon(Icons.keyboard_arrow_down),
-                          items: _paymentModes.map((pm) {
-                            final modeName = pm['modeName']?.toString() ?? 'Unknown';
-                            final modeId = pm['_id']?.toString() ?? pm['id']?.toString();
-                            final description = pm['description']?.toString() ?? '';
-                            final parsed = PaymentModeService.parseDescription(description);
-                            final mode = parsed['mode']?.toString() ?? 'Cash';
-                            
-                            return DropdownMenuItem<String>(
-                              value: modeId,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    mode == 'Cash'
-                                        ? Icons.money
-                                        : mode == 'UPI'
-                                            ? Icons.qr_code
-                                            : Icons.account_balance,
-                                    color: AppTheme.primaryColor,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(modeName),
-                                ],
-                              ),
+                      Builder(
+                        builder: (context) {
+                          // Get selected payment mode display text
+                          String displayText = 'Select Payment Mode';
+                          IconData? displayIcon;
+                          if (_selectedPaymentModeId != null) {
+                            final selectedPM = _paymentModes.firstWhere(
+                              (pm) => (pm['_id']?.toString() ?? pm['id']?.toString()) == _selectedPaymentModeId,
+                              orElse: () => {},
                             );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            if (newValue != null) {
-                              final selectedPM = _paymentModes.firstWhere(
-                                (pm) => (pm['_id']?.toString() ?? pm['id']?.toString()) == newValue,
-                                orElse: () => {},
-                              );
-                              if (selectedPM.isNotEmpty) {
-                                final description = selectedPM['description']?.toString() ?? '';
-                                final parsed = PaymentModeService.parseDescription(description);
-                                final mode = parsed['mode']?.toString() ?? 'Cash';
-                                
-                                setState(() {
-                                  _selectedPaymentModeId = newValue;
-                                  _selectedMode = mode;
-                                });
-                              }
+                            if (selectedPM.isNotEmpty) {
+                              final modeName = selectedPM['modeName']?.toString() ?? 'Unknown';
+                              final description = selectedPM['description']?.toString() ?? '';
+                              final parsed = PaymentModeService.parseDescription(description);
+                              final mode = parsed['mode']?.toString() ?? 'Cash';
+                              
+                              displayText = modeName;
+                              displayIcon = mode == 'Cash'
+                                  ? Icons.money
+                                  : mode == 'UPI'
+                                      ? Icons.qr_code
+                                      : Icons.account_balance;
                             }
-                          },
-                          selectedItemBuilder: (BuildContext context) {
-                            return _paymentModes.map((pm) {
-                              final modeName = pm['modeName']?.toString() ?? 'Unknown';
-                              return Container(
-                                alignment: Alignment.centerLeft,
+                          }
+                          
+                          // Calculate button height for proper menu offset
+                          final double buttonHeight = isMobile ? 48.0 : 56.0;
+                          final Offset menuOffset = Offset(0, buttonHeight + 4);
+                          
+                          return Material(
+                            elevation: 8,
+                            color: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            child: PopupMenuButton<String>(
+                              offset: menuOffset, // Position menu at bottom of button
+                              elevation: 8,
+                              shadowColor: Colors.black.withOpacity(0.08),
+                              surfaceTintColor: Colors.transparent,
+                              color: Colors.white,
+                              constraints: BoxConstraints(
+                                minWidth: isMobile ? double.infinity : 300,
+                                maxWidth: isMobile ? double.infinity : 400,
+                                maxHeight: 300,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              onSelected: (String? newValue) {
+                                if (newValue != null) {
+                                  final selectedPM = _paymentModes.firstWhere(
+                                    (pm) => (pm['_id']?.toString() ?? pm['id']?.toString()) == newValue,
+                                    orElse: () => {},
+                                  );
+                                  if (selectedPM.isNotEmpty) {
+                                    final description = selectedPM['description']?.toString() ?? '';
+                                    final parsed = PaymentModeService.parseDescription(description);
+                                    final mode = parsed['mode']?.toString() ?? 'Cash';
+                                    
+                                    setState(() {
+                                      _selectedPaymentModeId = newValue;
+                                      _selectedMode = mode;
+                                    });
+                                  }
+                                }
+                              },
+                              itemBuilder: (context) {
+                                return _paymentModes.map<PopupMenuEntry<String>>((pm) {
+                                  final modeName = pm['modeName']?.toString() ?? 'Unknown';
+                                  final modeId = pm['_id']?.toString() ?? pm['id']?.toString();
+                                  final description = pm['description']?.toString() ?? '';
+                                  final parsed = PaymentModeService.parseDescription(description);
+                                  final mode = parsed['mode']?.toString() ?? 'Cash';
+                                  final isSelected = modeId == _selectedPaymentModeId;
+                                  
+                                  IconData modeIcon = mode == 'Cash'
+                                      ? Icons.money
+                                      : mode == 'UPI'
+                                          ? Icons.qr_code
+                                          : Icons.account_balance;
+                                  
+                                  return PopupMenuItem<String>(
+                                    value: modeId,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        if (isSelected)
+                                          Icon(
+                                            Icons.check,
+                                            size: 18,
+                                            color: AppTheme.primaryColor,
+                                          )
+                                        else
+                                          const SizedBox(width: 18),
+                                        if (isSelected) const SizedBox(width: 8),
+                                        Icon(
+                                          modeIcon,
+                                          color: AppTheme.primaryColor,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            modeName,
+                                            style: TextStyle(
+                                              color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList();
+                              },
+                              // Child: Button that looks exactly like DropdownButtonFormField
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surfaceColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppTheme.borderColor),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 16,
+                                ),
                                 child: Row(
                                   children: [
-                                    Icon(
-                                      Icons.money,
-                                      color: Colors.grey[600],
-                                      size: 24,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      Icons.money,
-                                      color: AppTheme.primaryColor,
-                                      size: 24,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      '$modeName Mode',
-                                      style: TextStyle(
-                                        fontSize: isMobile ? 16 : 15,
-                                        fontWeight: FontWeight.w500,
+                                    if (displayIcon != null) ...[
+                                      Icon(
+                                        displayIcon,
+                                        color: AppTheme.primaryColor,
+                                        size: 24,
+                                      ),
+                                      const SizedBox(width: 12),
+                                    ] else if (_isLoadingPaymentModes) ...[
+                                      const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      ),
+                                      const SizedBox(width: 12),
+                                    ],
+                                    Expanded(
+                                      child: Text(
+                                        displayText,
+                                        style: TextStyle(
+                                          fontSize: isMobile ? 16 : 15,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                     ),
+                                    const Icon(Icons.keyboard_arrow_down),
                                   ],
                                 ),
-                              );
-                            }).toList();
-                          },
-                        ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 20),
 

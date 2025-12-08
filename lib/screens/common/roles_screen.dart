@@ -41,9 +41,7 @@ class _RolesScreenState extends State<RolesScreen> {
   int _totalUsers = 0;
   Timer? _refreshDebounceTimer;
   
-  // Auto-refresh configuration
-  Timer? _autoRefreshTimer;
-  static const Duration _autoRefreshInterval = Duration(seconds: 30); // Refresh every 30 seconds
+  // Debounce configuration for socket-based refresh
   static const Duration _debounceRefreshDelay = Duration(seconds: 2); // Debounce to prevent rapid refreshes
   DateTime? _lastRefreshTime;
 
@@ -52,15 +50,11 @@ class _RolesScreenState extends State<RolesScreen> {
     super.initState();
     _loadRoles();
     _setupSocketListener();
-    
-    // Start auto-refresh timer
-    _startAutoRefresh();
   }
 
   @override
   void dispose() {
     _refreshDebounceTimer?.cancel();
-    _autoRefreshTimer?.cancel();
     SocketService.offUserCreated();
     super.dispose();
   }
@@ -103,7 +97,7 @@ class _RolesScreenState extends State<RolesScreen> {
   }
 
   /// Auto-refresh method with debouncing to prevent excessive API calls
-  /// This method ensures roles data is refreshed when changes occur
+  /// This method is called by socket events when roles data changes
   void _autoRefreshRoles() {
     if (!mounted) return;
     
@@ -126,24 +120,6 @@ class _RolesScreenState extends State<RolesScreen> {
     
     // Refresh roles data silently
     _loadRoles();
-  }
-
-  /// Start the auto-refresh timer
-  void _startAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      _autoRefreshRoles();
-    });
-  }
-
-  /// Stop the auto-refresh timer
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
   }
 
   Future<void> _loadRoles() async {

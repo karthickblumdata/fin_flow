@@ -42,9 +42,7 @@ class _ManageExpenseTypesScreenContentState extends State<_ManageExpenseTypesScr
   List<Map<String, dynamic>> _expenseTypes = [];
   bool _isLoading = true;
   
-  // Auto-refresh configuration
-  Timer? _autoRefreshTimer;
-  static const Duration _autoRefreshInterval = Duration(seconds: 30); // Refresh every 30 seconds
+  // Debounce configuration for socket-based refresh
   static const Duration _debounceRefreshDelay = Duration(seconds: 2); // Debounce to prevent rapid refreshes
   DateTime? _lastRefreshTime;
 
@@ -53,14 +51,10 @@ class _ManageExpenseTypesScreenContentState extends State<_ManageExpenseTypesScr
     super.initState();
     _loadExpenseTypes();
     _setupSocketListener();
-    
-    // Start auto-refresh timer
-    _startAutoRefresh();
   }
 
   @override
   void dispose() {
-    _autoRefreshTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -102,7 +96,7 @@ class _ManageExpenseTypesScreenContentState extends State<_ManageExpenseTypesScr
   }
 
   /// Auto-refresh method with debouncing to prevent excessive API calls
-  /// This method ensures expense types data is refreshed when changes occur
+  /// This method is called by socket events when expense types data changes
   void _autoRefreshExpenseTypes() {
     if (!mounted) return;
     
@@ -125,24 +119,6 @@ class _ManageExpenseTypesScreenContentState extends State<_ManageExpenseTypesScr
     
     // Refresh expense types data silently
     _loadExpenseTypes();
-  }
-
-  /// Start the auto-refresh timer
-  void _startAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      _autoRefreshExpenseTypes();
-    });
-  }
-
-  /// Stop the auto-refresh timer
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
   }
 
   Future<void> _loadExpenseTypes() async {
@@ -630,39 +606,93 @@ class _ManageExpenseTypesScreenContentState extends State<_ManageExpenseTypesScr
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.surfaceColor,
-                                  borderRadius: BorderRadius.zero,
-                                  border: Border.all(
-                                    color: AppTheme.borderColor.withValues(alpha: 0.5),
-                                    width: 1.5,
+                              Material(
+                                elevation: 8,
+                                color: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                child: PopupMenuButton<String>(
+                                  offset: const Offset(0, 50), // Position menu at bottom of button
+                                  elevation: 8,
+                                  shadowColor: Colors.black.withOpacity(0.08),
+                                  surfaceTintColor: Colors.transparent,
+                                  color: Colors.white,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 200,
+                                    maxWidth: 200,
+                                    maxHeight: 300,
                                   ),
-                                ),
-                                child: DropdownButton<String>(
-                                  value: _selectedFilter,
-                                  underline: const SizedBox(),
-                                  isDense: true,
-                                  isExpanded: false,
-                                  icon: const Icon(Icons.arrow_drop_down, size: 24),
-                                  iconEnabledColor: AppTheme.primaryColor,
-                                  style: AppTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  items: _filters.map((String filter) {
-                                    return DropdownMenuItem<String>(
-                                      value: filter,
-                                      child: Text(filter),
-                                    );
-                                  }).toList(),
-                                  onChanged: (String? newValue) {
+                                  onSelected: (String? newValue) {
                                     if (newValue != null) {
                                       setState(() {
                                         _selectedFilter = newValue;
                                       });
                                     }
                                   },
+                                  itemBuilder: (context) {
+                                    return _filters.map<PopupMenuEntry<String>>((String filter) {
+                                      final isSelected = filter == _selectedFilter;
+                                      return PopupMenuItem<String>(
+                                        value: filter,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            if (isSelected)
+                                              Icon(
+                                                Icons.check,
+                                                size: 18,
+                                                color: AppTheme.primaryColor,
+                                              )
+                                            else
+                                              const SizedBox(width: 18),
+                                            if (isSelected) const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                filter,
+                                                style: AppTheme.bodyMedium.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList();
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surfaceColor,
+                                      borderRadius: BorderRadius.zero,
+                                      border: Border.all(
+                                        color: AppTheme.borderColor.withValues(alpha: 0.5),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _selectedFilter,
+                                          style: AppTheme.bodyMedium.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Icon(
+                                          Icons.arrow_drop_down,
+                                          size: 24,
+                                          color: AppTheme.primaryColor,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -674,39 +704,93 @@ class _ManageExpenseTypesScreenContentState extends State<_ManageExpenseTypesScr
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.surfaceColor,
-                                  borderRadius: BorderRadius.zero,
-                                  border: Border.all(
-                                    color: AppTheme.borderColor.withValues(alpha: 0.5),
-                                    width: 1.5,
+                              Material(
+                                elevation: 8,
+                                color: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                child: PopupMenuButton<String>(
+                                  offset: const Offset(0, 50), // Position menu at bottom of button
+                                  elevation: 8,
+                                  shadowColor: Colors.black.withOpacity(0.08),
+                                  surfaceTintColor: Colors.transparent,
+                                  color: Colors.white,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 200,
+                                    maxWidth: 200,
+                                    maxHeight: 300,
                                   ),
-                                ),
-                                child: DropdownButton<String>(
-                                  value: _selectedStatus,
-                                  underline: const SizedBox(),
-                                  isDense: true,
-                                  isExpanded: false,
-                                  icon: const Icon(Icons.arrow_drop_down, size: 24),
-                                  iconEnabledColor: AppTheme.primaryColor,
-                                  style: AppTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  items: _statusFilters.map((String filter) {
-                                    return DropdownMenuItem<String>(
-                                      value: filter,
-                                      child: Text(filter),
-                                    );
-                                  }).toList(),
-                                  onChanged: (String? newValue) {
+                                  onSelected: (String? newValue) {
                                     if (newValue != null) {
                                       setState(() {
                                         _selectedStatus = newValue;
                                       });
                                     }
                                   },
+                                  itemBuilder: (context) {
+                                    return _statusFilters.map<PopupMenuEntry<String>>((String filter) {
+                                      final isSelected = filter == _selectedStatus;
+                                      return PopupMenuItem<String>(
+                                        value: filter,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            if (isSelected)
+                                              Icon(
+                                                Icons.check,
+                                                size: 18,
+                                                color: AppTheme.primaryColor,
+                                              )
+                                            else
+                                              const SizedBox(width: 18),
+                                            if (isSelected) const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                filter,
+                                                style: AppTheme.bodyMedium.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList();
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surfaceColor,
+                                      borderRadius: BorderRadius.zero,
+                                      border: Border.all(
+                                        color: AppTheme.borderColor.withValues(alpha: 0.5),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _selectedStatus,
+                                          style: AppTheme.bodyMedium.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Icon(
+                                          Icons.arrow_drop_down,
+                                          size: 24,
+                                          color: AppTheme.primaryColor,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 16),

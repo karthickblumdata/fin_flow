@@ -151,9 +151,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
   String? _currentUserRole;
   bool _hasSmartApprovalsPermission = false;
   
-  // Auto-refresh configuration
-  Timer? _autoRefreshTimer;
-  static const Duration _autoRefreshInterval = Duration(seconds: 30); // Refresh every 30 seconds
+  // Debounce configuration for socket-based refresh
   static const Duration _debounceRefreshDelay = Duration(seconds: 2); // Debounce to prevent rapid refreshes
   DateTime? _lastRefreshTime;
   
@@ -194,14 +192,10 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
     
     // Initialize socket for real-time updates
     _initializeSocketListeners();
-    
-    // Start auto-refresh timer
-    _startAutoRefresh();
   }
 
   @override
   void dispose() {
-    _autoRefreshTimer?.cancel();
     _cleanupSocketListeners();
     _paymentModesLoadedNotifier.dispose();
     _scrollController.dispose();
@@ -209,7 +203,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
   }
 
   /// Auto-refresh method with debouncing to prevent excessive API calls
-  /// This method ensures pending approvals data is refreshed when changes occur
+  /// This method is called by socket events when pending approvals data changes
   void _autoRefreshPendingItems() {
     if (!mounted) return;
     
@@ -232,24 +226,6 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
     
     // Refresh pending items data silently
     _loadPendingItems();
-  }
-
-  /// Start the auto-refresh timer
-  void _startAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      _autoRefreshPendingItems();
-    });
-  }
-
-  /// Stop the auto-refresh timer
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
   }
 
   /// Initialize socket listeners for real-time pending approvals updates
@@ -4433,7 +4409,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
             ? (isReceiver && !isApproved && !isAccounted && !_isBulkActionInProgress)
             : itemType == 'expenses'
                 ? (!isApproved && !isAccounted && !_isBulkActionInProgress) // ALL users can approve expenses
-                : (hasApprovePermission && !isApproved && !isAccounted && !_isBulkActionInProgress);
+            : (hasApprovePermission && !isApproved && !isAccounted && !_isBulkActionInProgress);
     final bool canReject = itemType == 'collections'
         ? (!isCreator && (isReceiverButNotCreator || hasRejectPermission) && !isRejected)
         : (hasRejectPermission && !isRejected);

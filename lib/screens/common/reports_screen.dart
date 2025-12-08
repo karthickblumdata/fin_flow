@@ -63,9 +63,7 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
   List<Map<String, dynamic>> _savedReports = [];
   bool _isLoadingSavedReports = false;
   
-  // Auto-refresh configuration
-  Timer? _autoRefreshTimer;
-  static const Duration _autoRefreshInterval = Duration(seconds: 30); // Refresh every 30 seconds
+  // Debounce configuration for socket-based refresh
   static const Duration _debounceRefreshDelay = Duration(seconds: 2); // Debounce to prevent rapid refreshes
   DateTime? _lastRefreshTime;
 
@@ -81,14 +79,10 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
     _loadExpenseTypes(); // NEW: Load expense types
     _setupSocketListeners();
     _loadSavedReports();
-    
-    // Start auto-refresh timer
-    _startAutoRefresh();
   }
 
   @override
   void dispose() {
-    _autoRefreshTimer?.cancel();
     // Clean up socket listeners
     SocketService.offExpenseReportStatsUpdate();
     SocketService.offExpenseReportUpdate();
@@ -134,7 +128,7 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
   }
 
   /// Auto-refresh method with debouncing to prevent excessive API calls
-  /// This method ensures expense report data is refreshed when changes occur
+  /// This method is called by socket events when expense report data changes
   void _autoRefreshReport() {
     if (!mounted) return;
     
@@ -168,24 +162,6 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
         });
       }
     });
-  }
-
-  /// Start the auto-refresh timer
-  void _startAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      _autoRefreshReport();
-    });
-  }
-
-  /// Stop the auto-refresh timer
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
   }
 
   Future<void> _loadUsers() async {

@@ -45,9 +45,7 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
   bool _isNonWalletUser = false; // Track if current user is non-wallet user
   bool _isCheckingWallet = true; // Track if wallet check is in progress
   
-  // Auto-refresh configuration
-  Timer? _autoRefreshTimer;
-  static const Duration _autoRefreshInterval = Duration(seconds: 30); // Refresh every 30 seconds
+  // Debounce configuration for socket-based refresh
   static const Duration _debounceRefreshDelay = Duration(seconds: 2); // Debounce to prevent rapid refreshes
   DateTime? _lastRefreshTime;
 
@@ -60,9 +58,6 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
     
     // Initialize socket for real-time updates
     _initializeSocketListeners();
-    
-    // Start auto-refresh timer
-    _startAutoRefresh();
   }
 
   Future<void> _checkCurrentUserWallet() async {
@@ -92,7 +87,6 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
 
   @override
   void dispose() {
-    _autoRefreshTimer?.cancel();
     _cleanupSocketListeners();
     _searchController.dispose();
     super.dispose();
@@ -146,16 +140,21 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
   }
 
   bool _isWalletActive(dynamic wallet) {
-    final balance = _parseAmount(wallet['totalBalance']);
+    // Check user's isVerified status from userId object (primary determinant)
+    final user = wallet['userId'];
+    if (user != null) {
+      final isVerified = user['isVerified'];
+      if (isVerified is bool) {
+        return isVerified == true;
+      }
+    }
+    // Fallback: check wallet's isActive or status if user data is missing
     final statusValue = wallet['status']?.toString().toLowerCase();
-    final bool isActive = (wallet['isActive'] == true) ||
-        (statusValue == 'active') ||
-        balance > 0;
-    return isActive;
+    return (wallet['isActive'] == true) || (statusValue == 'active');
   }
 
   /// Auto-refresh method with debouncing to prevent excessive API calls
-  /// This method ensures wallet data is refreshed when changes occur
+  /// This method is called by socket events when wallet data changes
   void _autoRefreshWallets() {
     if (!mounted) return;
     
@@ -178,24 +177,6 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
     
     // Refresh wallets data silently (without showing loading state initially)
     _loadWallets();
-  }
-
-  /// Start the auto-refresh timer
-  void _startAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      _autoRefreshWallets();
-    });
-  }
-
-  /// Stop the auto-refresh timer
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
   }
 
   /// Initialize socket listeners for real-time wallet updates
@@ -929,9 +910,11 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
         {'container': 'statusSummary', 'keys': ['flagged']},
       ],
     );
-    final isActive = (wallet['isActive'] == true) ||
-        (wallet['status']?.toString().toLowerCase() == 'active') ||
-        balance > 0;
+    // Check user's isVerified status (primary determinant of active/inactive)
+    final isActive = user != null && user['isVerified'] == true
+        ? true
+        : ((wallet['isActive'] == true) ||
+            (wallet['status']?.toString().toLowerCase() == 'active'));
 
     return UserProfileCard(
       userName: userName,
@@ -991,9 +974,11 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
         {'container': 'statusSummary', 'keys': ['flagged']},
       ],
     );
-    final isActive = (wallet['isActive'] == true) ||
-        (wallet['status']?.toString().toLowerCase() == 'active') ||
-        balance > 0;
+    // Check user's isVerified status (primary determinant of active/inactive)
+    final isActive = user != null && user['isVerified'] == true
+        ? true
+        : ((wallet['isActive'] == true) ||
+            (wallet['status']?.toString().toLowerCase() == 'active'));
 
     // Get user initials for avatar
     final initials = userName
@@ -1548,7 +1533,7 @@ class UserProfileCard extends StatelessWidget {
         : _walletCardAvatarBaseSize;
     final double nameFontSize = compact ? 16 : 18;
     final double emailFontSize = compact ? 12 : 13;
-    final double headerSpacing = compact ? 10 : 12;
+    final double gapBetweenHeaderAndMetrics = compact ? 14 : 16;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1603,7 +1588,7 @@ class UserProfileCard extends StatelessWidget {
             ),
           ],
         ),
-        SizedBox(height: headerSpacing - (compact ? 2 : 4)),
+        SizedBox(height: gapBetweenHeaderAndMetrics),
         _buildMetricsRow(
           theme: theme,
           balanceText: balanceText,

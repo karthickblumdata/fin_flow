@@ -771,147 +771,186 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
                           ),
                         )
                       else
-                        DropdownButtonFormField<String>(
-                          value: _selectedAccountId,
-                          isExpanded: true,
-                          menuMaxHeight: isMobile ? 300 : 400,
-                          decoration: InputDecoration(
-                            labelText: 'Account',
-                            prefixIcon: const Icon(Icons.account_balance),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: isMobile ? 10 : 14,
-                            ),
-                          ),
-                          style: TextStyle(
-                            fontSize: isMobile ? 15 : 15,
-                          ),
-                          selectedItemBuilder: (BuildContext context) {
-                            // Custom builder for selected item display (single line to prevent overflow)
-                            return _accounts.map((account) {
-                              final autoPayStatus = account['autoPay'] == true ? 'ON' : 'OFF';
-                              if (isMobile) {
-                                // Very compact single line display for mobile to prevent overflow
-                                return Row(
-                                  children: [
-                                    Icon(
-                                      _getModeIcon(account['mode']),
-                                      size: 16,
-                                      color: AppTheme.primaryColor,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        '${account['name'] ?? 'Unknown'} • AP: $autoPayStatus',
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        maxLines: 1,
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              } else {
-                                // Desktop: single line with all info
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _getModeIcon(account['mode']),
-                                      size: 20,
-                                      color: AppTheme.primaryColor,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Flexible(
-                                      child: Text(
-                                        '${account['name'] ?? 'Unknown'} (Auto Pay: $autoPayStatus)',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                );
+                        Builder(
+                          builder: (context) {
+                            // Get selected account display text
+                            String displayText = 'Select Account';
+                            if (_selectedAccountId != null) {
+                              final selectedAccount = _accounts.firstWhere(
+                                (acc) => acc['id'] == _selectedAccountId,
+                                orElse: () => <String, dynamic>{},
+                              );
+                              if (selectedAccount.isNotEmpty) {
+                                final autoPayStatus = selectedAccount['autoPay'] == true ? 'ON' : 'OFF';
+                                if (isMobile) {
+                                  displayText = '${selectedAccount['name'] ?? 'Unknown'} • AP: $autoPayStatus';
+                                } else {
+                                  displayText = '${selectedAccount['name'] ?? 'Unknown'} (Auto Pay: $autoPayStatus)';
+                                }
                               }
-                            }).toList();
-                          },
-                          items: _accounts.map((account) {
-                            final autoPayStatus = account['autoPay'] == true ? 'ON' : 'OFF';
-                            return DropdownMenuItem<String>(
-                              value: account['id'],
-                              child: isMobile
-                                  ? Row(
-                                      children: [
-                                        Icon(
-                                          _getModeIcon(account['mode']),
-                                          size: 20,
-                                          color: AppTheme.primaryColor,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                account['name'] ?? 'Unknown',
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w500,
+                            }
+                            
+                            // Calculate button height for proper menu offset
+                            final double buttonHeight = isMobile ? 48.0 : 56.0;
+                            final Offset menuOffset = Offset(0, buttonHeight + 4);
+                            
+                            return Material(
+                              elevation: 8,
+                              color: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              child: PopupMenuButton<String>(
+                                offset: menuOffset, // Position menu at bottom of button
+                                elevation: 8,
+                                shadowColor: Colors.black.withOpacity(0.08),
+                                surfaceTintColor: Colors.transparent,
+                                color: Colors.white,
+                                constraints: BoxConstraints(
+                                  minWidth: isMobile ? double.infinity : 300,
+                                  maxWidth: isMobile ? double.infinity : 400,
+                                  maxHeight: isMobile ? 300 : 400,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                onSelected: (String? newValue) {
+                                  if (newValue != null) {
+                                    setState(() {
+                                      _selectedAccountId = newValue;
+                                      final selectedAccount = _accounts.firstWhere(
+                                        (acc) => acc['id'] == newValue,
+                                      );
+                                      _selectedMode = selectedAccount['mode'];
+                                    });
+                                  }
+                                },
+                                itemBuilder: (context) {
+                                  return _accounts.map<PopupMenuEntry<String>>((account) {
+                                    final autoPayStatus = account['autoPay'] == true ? 'ON' : 'OFF';
+                                    final isSelected = account['id'] == _selectedAccountId;
+                                    return PopupMenuItem<String>(
+                                      value: account['id'],
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: isMobile ? 10 : 8,
+                                      ),
+                                      child: isMobile
+                                          ? Row(
+                                              children: [
+                                                if (isSelected)
+                                                  Icon(
+                                                    Icons.check,
+                                                    size: 18,
+                                                    color: AppTheme.primaryColor,
+                                                  )
+                                                else
+                                                  const SizedBox(width: 18),
+                                                if (isSelected) const SizedBox(width: 8),
+                                                Icon(
+                                                  _getModeIcon(account['mode']),
+                                                  size: 20,
+                                                  color: AppTheme.primaryColor,
                                                 ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                'Auto Pay: $autoPayStatus',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: AppTheme.textSecondary,
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Text(
+                                                        account['name'] ?? 'Unknown',
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                                          color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        'Auto Pay: $autoPayStatus',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: AppTheme.textSecondary,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          _getModeIcon(account['mode']),
-                                          size: 20,
-                                          color: AppTheme.primaryColor,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Flexible(
-                                          child: Text(
-                                            '${account['name'] ?? 'Unknown'} (Auto Pay: $autoPayStatus)',
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
+                                              ],
+                                            )
+                                          : Row(
+                                              children: [
+                                                if (isSelected)
+                                                  Icon(
+                                                    Icons.check,
+                                                    size: 18,
+                                                    color: AppTheme.primaryColor,
+                                                  )
+                                                else
+                                                  const SizedBox(width: 18),
+                                                if (isSelected) const SizedBox(width: 8),
+                                                Icon(
+                                                  _getModeIcon(account['mode']),
+                                                  size: 20,
+                                                  color: AppTheme.primaryColor,
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Text(
+                                                    '${account['name'] ?? 'Unknown'} (Auto Pay: $autoPayStatus)',
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                    );
+                                  }).toList();
+                                },
+                                // Child: Button that looks exactly like DropdownButtonFormField
+                                child: InputDecorator(
+                                  decoration: InputDecoration(
+                                    labelText: 'Account',
+                                    prefixIcon: const Icon(Icons.account_balance),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: isMobile ? 10 : 14,
+                                    ),
+                                    suffixIcon: const Icon(Icons.arrow_drop_down),
+                                  ),
+                                  isFocused: false,
+                                  isEmpty: false,
+                                  child: Row(
+                                    children: [
+                                      if (_selectedAccountId != null)
+                                        Icon(
+                                          _getModeIcon(_accounts.firstWhere(
+                                            (acc) => acc['id'] == _selectedAccountId,
+                                          )['mode']),
+                                          size: isMobile ? 16 : 20,
+                                          color: AppTheme.primaryColor,
+                                        ),
+                                      if (_selectedAccountId != null) SizedBox(width: isMobile ? 6 : 12),
+                                      Expanded(
+                                        child: Text(
+                                          displayText,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: isMobile ? 15 : 15,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            if (newValue != null) {
-                              setState(() {
-                                _selectedAccountId = newValue;
-                                final selectedAccount = _accounts.firstWhere(
-                                  (acc) => acc['id'] == newValue,
-                                );
-                                _selectedMode = selectedAccount['mode'];
-                              });
-                            }
-                          },
-                          validator: (value) {
-                            if (value == null) {
-                              return 'Please select an account';
-                            }
-                            return null;
                           },
                         ),
                       SizedBox(height: isMobile ? 16 : 20),
