@@ -756,25 +756,25 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                                     );
                                   }).toList();
                                 },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.surfaceColor,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: AppTheme.borderColor.withValues(alpha: 0.5),
-                                      width: 1.5,
-                                    ),
-                                  ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceColor,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppTheme.borderColor.withValues(alpha: 0.5),
+                                  width: 1.5,
+                                ),
+                              ),
                                   child: Row(
                                     children: [
                                       Expanded(
                                         child: Text(
                                           _selectedFilter,
-                                          style: AppTheme.bodyMedium.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 13,
-                                          ),
+                                style: AppTheme.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                                         ),
                                       ),
                                       Icon(
@@ -861,25 +861,25 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                                     );
                                   }).toList();
                                 },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.surfaceColor,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: AppTheme.borderColor.withValues(alpha: 0.5),
-                                      width: 1.5,
-                                    ),
-                                  ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceColor,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppTheme.borderColor.withValues(alpha: 0.5),
+                                  width: 1.5,
+                                ),
+                              ),
                                   child: Row(
                                     children: [
                                       Expanded(
                                         child: Text(
                                           _selectedPlanStatus,
-                                          style: AppTheme.bodyMedium.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 13,
-                                          ),
+                                style: AppTheme.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                                         ),
                                       ),
                                       Icon(
@@ -1086,23 +1086,23 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                             }).toList();
                           },
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surfaceColor,
-                              borderRadius: BorderRadius.zero,
-                              border: Border.all(
-                                color: AppTheme.borderColor.withValues(alpha: 0.5),
-                                width: 1.5,
-                              ),
-                            ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceColor,
+                          borderRadius: BorderRadius.zero,
+                          border: Border.all(
+                            color: AppTheme.borderColor.withValues(alpha: 0.5),
+                            width: 1.5,
+                          ),
+                        ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   _selectedFilter,
-                                  style: AppTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                          style: AppTheme.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                                 ),
                                 const SizedBox(width: 8),
                                 Icon(
@@ -1183,23 +1183,23 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                             }).toList();
                           },
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surfaceColor,
-                              borderRadius: BorderRadius.zero,
-                              border: Border.all(
-                                color: AppTheme.borderColor.withValues(alpha: 0.5),
-                                width: 1.5,
-                              ),
-                            ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceColor,
+                          borderRadius: BorderRadius.zero,
+                          border: Border.all(
+                            color: AppTheme.borderColor.withValues(alpha: 0.5),
+                            width: 1.5,
+                          ),
+                        ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   _selectedPlanStatus,
-                                  style: AppTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                          style: AppTheme.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                                 ),
                                 const SizedBox(width: 8),
                                 Icon(

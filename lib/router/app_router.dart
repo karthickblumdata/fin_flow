@@ -155,6 +155,13 @@ final GoRouter appRouter = GoRouter(
       },
     ),
     GoRoute(
+      path: '/users/assign-wallets',
+      name: 'assign-wallets',
+      builder: (context, state) => SuperAdminDashboard(
+        initialSelectedItem: NavItem.assignWallets,
+      ),
+    ),
+    GoRoute(
       path: '/reports/accounts',
       name: 'reports-accounts',
       builder: (context, state) => SuperAdminDashboard(

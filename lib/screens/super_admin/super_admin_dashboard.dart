@@ -1307,6 +1307,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       case NavItem.roles:
         canAccess = _canViewRoles;
         break;
+      case NavItem.assignWallets:
+        // Allow access to Assign Wallets (coming soon screen)
+        canAccess = _canViewUsersMenu;
+        break;
       case NavItem.paymentModes:
         canAccess = _canViewPaymentModes;
         break;
@@ -7177,23 +7181,27 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         debugPrint('   Items after account filter: ${filtered.length}');
         debugPrint('═══════════════════════════════════════════════════════════');
         
-        // For Account Reports with account filter: Use API summary values if available
-        // The API already filtered by accountId and returned correct totals
-        // Only recalculate from filtered data if we have actual data AND API values are 0
+        // For Account Reports with account filter: ALWAYS use API summary values
+        // The API already filtered by accountId and excluded Entry 1 collections
+        // Backend correctly excludes Entry 1 at database level, so API values are accurate
+        // DO NOT recalculate from filtered data - it could cause double counting if Entry 1 slips through
         final bool hasApiSummaryValues = _cashIn != 0.0 || _cashOut != 0.0 || _balance != 0.0;
-        final bool hasFilteredData = filtered.isNotEmpty;
         
-        if (hasApiSummaryValues && !hasFilteredData) {
-          // API has correct values but no detailed data yet - keep API values
+        if (hasApiSummaryValues) {
+          // API has correct values (already filtered and Entry 1 excluded) - ALWAYS use them
           debugPrint('═══════════════════════════════════════════════════════════');
-          debugPrint('📊 [ACCOUNT REPORTS] Using API summary totals (no detailed data yet):');
+          debugPrint('📊 [ACCOUNT REPORTS] Using API summary totals (backend already filtered correctly):');
           debugPrint('   Account ID: $_selectedAccountFilterId');
-          debugPrint('   Cash In: $_cashIn (from API)');
-          debugPrint('   Cash Out: $_cashOut (from API)');
-          debugPrint('   Balance: $_balance (from API)');
+          debugPrint('   Cash In: $_cashIn (from API - Entry 1 excluded)');
+          debugPrint('   Cash Out: $_cashOut (from API - Entry 1 excluded)');
+          debugPrint('   Balance: $_balance (from API - Entry 1 excluded)');
+          debugPrint('   Note: Backend excludes Entry 1 at database level, so API values are accurate');
+          debugPrint('   Note: NOT recalculating from filtered data to prevent double counting');
           debugPrint('═══════════════════════════════════════════════════════════');
-          // Don't update - keep existing API values (already set at line 3178-3183)
-        } else if (hasFilteredData) {
+          // Don't update - keep existing API values (already set correctly)
+        } else if (filtered.isNotEmpty) {
+          // Only recalculate if API values are 0 AND we have filtered data
+          // This handles edge cases where API might return 0, 0, 0
         // Recalculate totals from filtered data (account-specific)
         double accountCashIn = 0.0;
         double accountCashOut = 0.0;
@@ -8389,6 +8397,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         return '/users';
       case NavItem.roles:
         return '/roles';
+      case NavItem.assignWallets:
+        return '/users/assign-wallets';
       case NavItem.accountReports:
         return '/reports/accounts';
       case NavItem.paymentModes:
@@ -8791,6 +8801,18 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           ),
         );
       }
+      usersChildren.add(
+        _buildSubNavItem(
+          title: 'Assign Wallets',
+          isSelected: _selectedItem == NavItem.assignWallets,
+          onTap: () {
+            setState(() {
+              _usersExpanded = true;
+            });
+            _navigateToRoute(NavItem.assignWallets);
+          },
+        ),
+      );
       
       // Only show users menu if at least one child is visible
       if (usersChildren.isNotEmpty) {
@@ -8800,7 +8822,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             title: 'All Users',
             isExpanded: _usersExpanded,
             hasSelectedChild:
-                _selectedItem == NavItem.users || _selectedItem == NavItem.roles,
+                _selectedItem == NavItem.users || 
+                _selectedItem == NavItem.roles ||
+                _selectedItem == NavItem.assignWallets,
             onTap: () {
               setState(() {
                 _usersExpanded = true;
@@ -9076,13 +9100,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           ),
         );
       }
+      usersOptions.add(
+        _CollapsedMenuOption(
+          id: 'assignWallets',
+          label: 'Assign Wallets',
+          isSelected: _selectedItem == NavItem.assignWallets,
+          onSelected: () => _navigateToRoute(NavItem.assignWallets),
+        ),
+      );
       
       if (usersOptions.isNotEmpty) {
         menuItems.add(
           _buildCollapsedMenuGroup(
             icon: Icons.people_outlined,
             label: 'All Users',
-            isActive: _selectedItem == NavItem.users || _selectedItem == NavItem.roles,
+            isActive: _selectedItem == NavItem.users || 
+                     _selectedItem == NavItem.roles ||
+                     _selectedItem == NavItem.assignWallets,
             options: usersOptions,
           ),
         );
@@ -9987,6 +10021,21 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                     ),
         );
       }
+      usersChildren.add(
+                    _buildMobileNavItem(
+                      icon: Icons.account_balance_wallet_outlined,
+                      title: 'Assign Wallets',
+                      isSelected: _selectedItem == NavItem.assignWallets,
+                      isSubItem: true,
+                      onTap: () {
+                        setState(() {
+                          _isDrawerOpen = false;
+                          _usersExpanded = true;
+                        });
+                        _navigateToRoute(NavItem.assignWallets);
+                      },
+                    ),
+      );
                 
       // Only show users menu if at least one child is visible
       if (usersChildren.isNotEmpty) {
@@ -9997,16 +10046,20 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                     color: AppTheme.textSecondary,
                   ),
                   initiallyExpanded:
-                _selectedItem == NavItem.users || _selectedItem == NavItem.roles,
+                _selectedItem == NavItem.users || 
+                _selectedItem == NavItem.roles ||
+                _selectedItem == NavItem.assignWallets,
                   title: Text(
               'All Users',
                     style: TextStyle(
                 fontWeight: (_selectedItem == NavItem.users ||
-                        _selectedItem == NavItem.roles)
+                        _selectedItem == NavItem.roles ||
+                        _selectedItem == NavItem.assignWallets)
                           ? FontWeight.w600
                           : FontWeight.normal,
                 color: (_selectedItem == NavItem.users ||
-                        _selectedItem == NavItem.roles)
+                        _selectedItem == NavItem.roles ||
+                        _selectedItem == NavItem.assignWallets)
                           ? AppTheme.primaryColor
                           : AppTheme.textPrimary,
                     ),
@@ -10380,6 +10433,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           embedInDashboard: true,
           highlightRole: _highlightRole, // Pass role to highlight
         );
+      case NavItem.assignWallets:
+        return _buildComingSoonScreen('Assign Wallets');
       case NavItem.accountReports:
         return _buildDashboardContent(
           isAllAccounts: true,
@@ -10407,6 +10462,48 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           showAppBar: false,
         );
     }
+  }
+
+  /// Build a "Coming Soon" screen
+  Widget _buildComingSoonScreen(String featureName) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.construction_outlined,
+              size: 80,
+              color: AppTheme.primaryColor.withOpacity(0.6),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              featureName,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Coming Soon',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'This feature is under development and will be available soon.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppTheme.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // Modal dialog for Add Amount
@@ -10583,6 +10680,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                         // Account Selection - Using PopupMenuButton with bottom alignment (same as Add Collection)
                         Builder(
                           builder: (context) {
+                            // GlobalKey to measure actual height of the InputDecorator
+                            final GlobalKey inputKey = GlobalKey();
+                            
                             // Get selected account display text
                             String displayText = 'Select Account';
                             if (_selectedAccountId != null) {
@@ -10598,11 +10698,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                               }
                             }
                             
-                            // Calculate button height for proper menu offset (same as Add Collection)
-                            // InputDecorator with label has approximate height: 72px (mobile) or 80px (desktop)
-                            // This includes label (16px) + padding (20px) + content (36px) + border (2px)
-                            final double buttonHeight = isMobile ? 72.0 : 80.0;
-                            final Offset menuOffset = Offset(0, buttonHeight + 4);
+                            // Calculate button height for proper menu offset (aligned at bottom of text box)
+                            // InputDecorator with label actual height:
+                            // Mobile: ~74px, Desktop: ~82px (including label, padding, border)
+                            final double buttonHeight = isMobile ? 74.0 : 82.0;
+                            final Offset menuOffset = Offset(0, buttonHeight + 4); // 4px gap below text box
                             
                             return SizedBox(
                               width: double.infinity,
@@ -10611,7 +10711,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                 color: Colors.transparent,
                                 shadowColor: Colors.transparent,
                                 child: PopupMenuButton<String>(
-                                  offset: menuOffset, // Position menu at bottom of button (same as Add Collection)
+                                  offset: menuOffset, // Position menu at bottom of text box with 4px gap
+                                  // Ensure menu always opens below (prevent auto-positioning above)
+                                  clipBehavior: Clip.none,
                                 elevation: 8,
                                 shadowColor: Colors.black.withOpacity(0.08),
                                 surfaceTintColor: Colors.transparent,
@@ -10959,7 +11061,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                         ),
                         const SizedBox(height: 24),
                         
-                        // Account Selection
+                        // Account Selection - Using PopupMenuButton with bottom alignment
                         _allAccountsList.isEmpty
                             ? Container(
                                 padding: const EdgeInsets.all(16),
@@ -10989,31 +11091,130 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               ],
             ),
                               )
-                            : DropdownButtonFormField<String>(
-                                value: preservedAccountId ?? _selectedAccountId,
-                                decoration: const InputDecoration(
-                                  labelText: 'Account Selection',
-                                  hintText: 'Select an account',
-                                  prefixIcon: Icon(Icons.account_balance_outlined),
-                                ),
-                                items: _allAccountsList.map((account) {
-                                  final accountId = account['id']?.toString() ?? '';
-                                  final accountName = account['name']?.toString() ?? 'Unknown Account';
-                                  return DropdownMenuItem<String>(
-                                    value: accountId,
-                                    child: Text(accountName),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setDialogState(() {
-                                    _selectedAccountId = value;
-                                  });
-                                },
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please select an account';
+                            : Builder(
+                                builder: (context) {
+                                  // Get selected account display text
+                                  final currentValue = preservedAccountId ?? _selectedAccountId;
+                                  String displayText = 'Select Account';
+                                  if (currentValue != null) {
+                                    final selectedAccount = _allAccountsList.firstWhere(
+                                      (acc) {
+                                        final accId = (acc['id'] ?? acc['_id'])?.toString() ?? '';
+                                        return accId == currentValue;
+                                      },
+                                      orElse: () => <String, dynamic>{},
+                                    );
+                                    if (selectedAccount.isNotEmpty) {
+                                      displayText = (selectedAccount['name'] ?? selectedAccount['modeName'] ?? 'Unknown Account').toString();
+                                    }
                                   }
-                                  return null;
+                                  
+                                  // Calculate button height for proper menu offset (aligned at bottom of text box)
+                                  // InputDecorator with label actual height:
+                                  // Mobile: ~76px, Desktop: ~84px (including label, padding, border)
+                                  // Using slightly higher offset to ensure menu appears exactly at bottom
+                                  final double buttonHeight = isMobile ? 76.0 : 84.0;
+                                  final Offset menuOffset = Offset(0, buttonHeight); // Menu starts exactly at bottom of button
+                                  
+                                  return SizedBox(
+                                    width: double.infinity,
+                                    child: Material(
+                                      elevation: 8,
+                                      color: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      child: PopupMenuButton<String>(
+                                        offset: menuOffset, // Position menu at bottom of text box
+                                        // Ensure menu always opens below (prevent auto-positioning above)
+                                        clipBehavior: Clip.none,
+                                        elevation: 8,
+                                        shadowColor: Colors.black.withOpacity(0.08),
+                                        surfaceTintColor: Colors.transparent,
+                                        color: Colors.white,
+                                        constraints: BoxConstraints(
+                                          minWidth: isMobile ? double.infinity : 300,
+                                          maxWidth: isMobile ? double.infinity : 400,
+                                          maxHeight: isMobile ? 300 : 400,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        onSelected: (String? newValue) {
+                                          if (newValue != null) {
+                                  setDialogState(() {
+                                              _selectedAccountId = newValue;
+                                            });
+                                          }
+                                        },
+                                        itemBuilder: (context) {
+                                          return _allAccountsList.map<PopupMenuEntry<String>>((account) {
+                                            final accountId = (account['id'] ?? account['_id'])?.toString() ?? '';
+                                            final accountName = (account['name'] ?? account['modeName'] ?? 'Unknown Account').toString();
+                                            final isSelected = accountId == currentValue;
+                                            
+                                            return PopupMenuItem<String>(
+                                              value: accountId,
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: isMobile ? 10 : 8,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  if (isSelected)
+                                                    Icon(
+                                                      Icons.check,
+                                                      size: 18,
+                                                      color: AppTheme.primaryColor,
+                                                    )
+                                                  else
+                                                    const SizedBox(width: 18),
+                                                  if (isSelected) const SizedBox(width: 8),
+                                                  Icon(
+                                                    Icons.account_balance_outlined,
+                                                    size: 20,
+                                                    color: AppTheme.primaryColor,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Text(
+                                                      accountName,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                                        color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          }).toList();
+                                        },
+                                        // Child: Button that looks exactly like DropdownButtonFormField
+                                        child: InputDecorator(
+                                          decoration: InputDecoration(
+                                            labelText: 'Account Selection',
+                                            hintText: 'Select an account',
+                                            prefixIcon: const Icon(Icons.account_balance_outlined),
+                                            border: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            contentPadding: EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: isMobile ? 10 : 14,
+                                            ),
+                                            suffixIcon: const Icon(Icons.arrow_drop_down),
+                                          ),
+                                          isFocused: false,
+                                          isEmpty: currentValue == null,
+                                          child: Text(
+                                            displayText,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
                                 },
                               ),
                         const SizedBox(height: 20),
@@ -11276,7 +11477,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             ),
             const SizedBox(height: 24),
                         
-                        // Account Selection
+                        // Account Selection - Using PopupMenuButton with bottom alignment
                         _allAccountsList.isEmpty
                             ? Container(
                                 padding: const EdgeInsets.all(16),
@@ -11306,31 +11507,130 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                   ],
                                 ),
                               )
-                            : DropdownButtonFormField<String>(
-                                value: preservedAccountId ?? _selectedAccountId,
-                                decoration: const InputDecoration(
-                                  labelText: 'Account Selection',
-                                  hintText: 'Select an account',
-                                  prefixIcon: Icon(Icons.account_balance_outlined),
-                                ),
-                                items: _allAccountsList.map((account) {
-                                  final accountId = account['id']?.toString() ?? '';
-                                  final accountName = account['name']?.toString() ?? 'Unknown Account';
-                                  return DropdownMenuItem<String>(
-                                    value: accountId,
-                                    child: Text(accountName),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setDialogState(() {
-                                    _selectedAccountId = value;
-                                  });
-                                },
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please select an account';
+                            : Builder(
+                                builder: (context) {
+                                  // Get selected account display text
+                                  final currentValue = preservedAccountId ?? _selectedAccountId;
+                                  String displayText = 'Select Account';
+                                  if (currentValue != null) {
+                                    final selectedAccount = _allAccountsList.firstWhere(
+                                      (acc) {
+                                        final accId = (acc['id'] ?? acc['_id'])?.toString() ?? '';
+                                        return accId == currentValue;
+                                      },
+                                      orElse: () => <String, dynamic>{},
+                                    );
+                                    if (selectedAccount.isNotEmpty) {
+                                      displayText = (selectedAccount['name'] ?? selectedAccount['modeName'] ?? 'Unknown Account').toString();
+                                    }
                                   }
-                                  return null;
+                                  
+                                  // Calculate button height for proper menu offset (aligned at bottom of text box)
+                                  // InputDecorator with label actual height:
+                                  // Mobile: ~76px, Desktop: ~84px (including label, padding, border)
+                                  // Using slightly higher offset to ensure menu appears exactly at bottom
+                                  final double buttonHeight = isMobile ? 76.0 : 84.0;
+                                  final Offset menuOffset = Offset(0, buttonHeight); // Menu starts exactly at bottom of button
+                                  
+                                  return SizedBox(
+                                    width: double.infinity,
+                                    child: Material(
+                                      elevation: 8,
+                                      color: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      child: PopupMenuButton<String>(
+                                        offset: menuOffset, // Position menu at bottom of text box
+                                        // Ensure menu always opens below (prevent auto-positioning above)
+                                        clipBehavior: Clip.none,
+                                        elevation: 8,
+                                        shadowColor: Colors.black.withOpacity(0.08),
+                                        surfaceTintColor: Colors.transparent,
+                                        color: Colors.white,
+                                        constraints: BoxConstraints(
+                                          minWidth: isMobile ? double.infinity : 300,
+                                          maxWidth: isMobile ? double.infinity : 400,
+                                          maxHeight: isMobile ? 300 : 400,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        onSelected: (String? newValue) {
+                                          if (newValue != null) {
+                                  setDialogState(() {
+                                              _selectedAccountId = newValue;
+                                            });
+                                          }
+                                        },
+                                        itemBuilder: (context) {
+                                          return _allAccountsList.map<PopupMenuEntry<String>>((account) {
+                                            final accountId = (account['id'] ?? account['_id'])?.toString() ?? '';
+                                            final accountName = (account['name'] ?? account['modeName'] ?? 'Unknown Account').toString();
+                                            final isSelected = accountId == currentValue;
+                                            
+                                            return PopupMenuItem<String>(
+                                              value: accountId,
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: isMobile ? 10 : 8,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  if (isSelected)
+                                                    Icon(
+                                                      Icons.check,
+                                                      size: 18,
+                                                      color: AppTheme.primaryColor,
+                                                    )
+                                                  else
+                                                    const SizedBox(width: 18),
+                                                  if (isSelected) const SizedBox(width: 8),
+                                                  Icon(
+                                                    Icons.account_balance_outlined,
+                                                    size: 20,
+                                                    color: AppTheme.primaryColor,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Text(
+                                                      accountName,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                                        color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          }).toList();
+                                        },
+                                        // Child: Button that looks exactly like DropdownButtonFormField
+                                        child: InputDecorator(
+                                          decoration: InputDecoration(
+                                            labelText: 'Account Selection',
+                                            hintText: 'Select an account',
+                                            prefixIcon: const Icon(Icons.account_balance_outlined),
+                                            border: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            contentPadding: EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: isMobile ? 10 : 14,
+                                            ),
+                                            suffixIcon: const Icon(Icons.arrow_drop_down),
+                                          ),
+                                          isFocused: false,
+                                          isEmpty: currentValue == null,
+                                          child: Text(
+                                            displayText,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
                                 },
                               ),
                         const SizedBox(height: 20),
@@ -15402,24 +15702,24 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                         horizontal: 16,
                                         vertical: isMobile ? 16 : 14,
                                       ),
-                                      suffixIcon: _isLoadingPaymentModes
-                                          ? const Padding(
-                                              padding: EdgeInsets.all(12.0),
-                                              child: SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child: CircularProgressIndicator(strokeWidth: 2),
-                                              ),
-                                            )
+                                  suffixIcon: _isLoadingPaymentModes
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(12.0),
+                                          child: SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          ),
+                                        )
                                           : const Icon(Icons.arrow_drop_down),
-                                    ),
+                                ),
                                     isFocused: false,
                                     isEmpty: false,
                                     child: Text(
                                       currentMode,
-                                      style: TextStyle(
-                                        fontSize: isMobile ? 16 : 15,
-                                      ),
+                                style: TextStyle(
+                                  fontSize: isMobile ? 16 : 15,
+                                ),
                                     ),
                                   ),
                                 ),
@@ -21102,95 +21402,6 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     );
   }
 
-  Widget _buildComingSoonScreen() {
-      final isMobile = Responsive.isMobile(context);
-      final isTablet = Responsive.isTablet(context);
-
-    return Center(
-                  child: SingleChildScrollView(
-        padding: EdgeInsets.all(isMobile ? 24 : 32),
-                      child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-              padding: const EdgeInsets.all(24),
-                                decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
-              child: Icon(
-                Icons.construction_outlined,
-                size: isMobile ? 80 : 120,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'Coming Soon',
-              style: AppTheme.headingLarge.copyWith(
-                fontSize: isMobile ? 32 : 48,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.primaryColor,
-                                ),
-                              ),
-            const SizedBox(height: 16),
-            Text(
-              'Super Admin Dashboard',
-                                  style: AppTheme.headingMedium.copyWith(
-                fontSize: isMobile ? 20 : 24,
-                color: AppTheme.textSecondary,
-                                  ),
-                                ),
-            const SizedBox(height: 32),
-            Container(
-              padding: EdgeInsets.all(isMobile ? 20 : 24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppTheme.borderColor,
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-              child: Column(
-                                    children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 40,
-                    color: AppTheme.primaryColor,
-                                      ),
-                  const SizedBox(height: 16),
-                                      Text(
-                    'We are working hard to bring you an amazing dashboard experience.',
-                    textAlign: TextAlign.center,
-                    style: AppTheme.bodyLarge.copyWith(
-                      color: AppTheme.textPrimary,
-                    ),
-                                      ),
-                  const SizedBox(height: 8),
-                                      Text(
-                    'Stay tuned for updates!',
-                    textAlign: TextAlign.center,
-                                        style: AppTheme.bodyMedium.copyWith(
-                                          color: AppTheme.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildDashboardContent({bool isSelfWallet = false, String? customTitle, bool isAllAccounts = false, bool isExpenseReportOnly = false}) {
     final isMobile = Responsive.isMobile(context);
     final isTablet = Responsive.isTablet(context);
@@ -22497,8 +22708,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             maxHeight: 300,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+                borderRadius: BorderRadius.circular(12),
+              ),
           onSelected: (String? value) {
             // Special constant for "All Accounts"
             const String allAccountsValue = 'all_accounts';
@@ -22576,7 +22787,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             const String allAccountsValue = 'all_accounts';
             
             return [
-              // First item: "All Accounts" option
+          // First item: "All Accounts" option
               PopupMenuItem<String?>(
                 value: allAccountsValue, // Use constant instead of null for better reliability
                 padding: const EdgeInsets.symmetric(
@@ -22595,26 +22806,26 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       const SizedBox(width: 18),
                     if (_selectedAccountFilterId == null) const SizedBox(width: 8),
                     const Expanded(
-                      child: Text('All Accounts'),
+            child: Text('All Accounts'),
                     ),
                   ],
                 ),
-              ),
-              // Then all accounts
-              ...prioritizedAccounts.map((account) {
-                final accountId = (account['id'] ?? account['_id'])?.toString() ?? '';
-                final accountName = (account['name'] ?? account['modeName'] ?? 'Unknown Account').toString();
-                final isRecent = accountId.isNotEmpty && _recentAccountIds.contains(accountId);
+          ),
+          // Then all accounts
+          ...prioritizedAccounts.map((account) {
+            final accountId = (account['id'] ?? account['_id'])?.toString() ?? '';
+                    final accountName = (account['name'] ?? account['modeName'] ?? 'Unknown Account').toString();
+            final isRecent = accountId.isNotEmpty && _recentAccountIds.contains(accountId);
                 final isSelected = accountId == _selectedAccountFilterId;
-                
+            
                 return PopupMenuItem<String?>(
-                  value: accountId,
+              value: accountId,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 8,
                   ),
-                  child: Row(
-                    children: [
+                        child: Row(
+                          children: [
                       if (isSelected)
                         Icon(
                           Icons.check,
@@ -22624,41 +22835,41 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       else
                         const SizedBox(width: 18),
                       if (isSelected) const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          accountName,
-                          overflow: TextOverflow.ellipsis,
+                            Expanded(
+                                        child: Text(
+                                          accountName,
+                                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
                             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                           ),
-                        ),
-                      ),
-                      if (isRecent) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.secondaryColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Recent',
-                            style: AppTheme.bodySmall.copyWith(
-                              fontSize: 10,
-                              color: AppTheme.secondaryColor,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              }).toList(),
+                                        ),
+                                      ),
+                                      if (isRecent) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.secondaryColor.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            'Recent',
+                                            style: AppTheme.bodySmall.copyWith(
+                                              fontSize: 10,
+                                              color: AppTheme.secondaryColor,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                ],
+              ),
+            );
+          }).toList(),
             ];
           },
           // Child: Button that looks exactly like DropdownButtonFormField
@@ -22847,19 +23058,19 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           },
           // Child: Button that looks exactly like DropdownButtonFormField
           child: InputDecorator(
-            decoration: InputDecoration(
-              labelText: 'Status',
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 12 : 16,
-                vertical: isMobile ? 12 : 14,
-              ),
+        decoration: InputDecoration(
+          labelText: 'Status',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 12 : 16,
+            vertical: isMobile ? 12 : 14,
+          ),
               suffixIcon: const Icon(Icons.arrow_drop_down),
-            ),
+        ),
             isFocused: false,
             isEmpty: false,
             child: Text(
@@ -25981,24 +26192,24 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         },
         // Child: Button that looks exactly like DropdownButtonFormField
         child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: label,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: AppTheme.borderColor),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: AppTheme.borderColor),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-            ),
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 10 : 12,
-              vertical: isMobile ? 8 : 10,
-            ),
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: AppTheme.borderColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: AppTheme.borderColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
+        ),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 10 : 12,
+          vertical: isMobile ? 8 : 10,
+        ),
             suffixIcon: Icon(
               Icons.keyboard_arrow_down,
               color: AppTheme.textSecondary,
@@ -26010,11 +26221,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             mainAxisSize: MainAxisSize.min,
             children: [
               Expanded(
-                child: Text(
+          child: Text(
                   finalDisplayText,
-                  style: AppTheme.bodyMedium,
-                  overflow: TextOverflow.ellipsis,
-                ),
+            style: AppTheme.bodyMedium,
+            overflow: TextOverflow.ellipsis,
+          ),
               ),
             ],
           ),
@@ -26173,13 +26384,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             final itemImageUrl = item != 'All' ? _getExpenseTypeImageUrl(item) : null;
             
             return PopupMenuItem<String>(
-              value: item,
+          value: item,
               padding: EdgeInsets.symmetric(
                 horizontal: 12,
                 vertical: 8,
               ),
-              child: Row(
-                children: [
+          child: Row(
+            children: [
                   if (isSelected)
                     Icon(
                       Icons.check,
@@ -26190,65 +26401,65 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                     const SizedBox(width: 18),
                   if (isSelected) const SizedBox(width: 8),
                   if (itemImageUrl != null)
-                    Container(
-                      width: 32,
-                      height: 32,
-                      margin: const EdgeInsets.only(right: 12),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppTheme.borderColor.withOpacity(0.3)),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
+                Container(
+                  width: 32,
+                  height: 32,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppTheme.borderColor.withOpacity(0.3)),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.network(
                           itemImageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: AppTheme.backgroundColor,
-                              child: Icon(
-                                Icons.category_outlined,
-                                size: 18,
-                                color: AppTheme.textSecondary,
-                              ),
-                            );
-                          },
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Center(
-                              child: SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  value: loadingProgress.expectedTotalBytes != null
-                                      ? loadingProgress.cumulativeBytesLoaded /
-                                          loadingProgress.expectedTotalBytes!
-                                      : null,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    )
-                  else if (item != 'All')
-                    Container(
-                      width: 32,
-                      height: 32,
-                      margin: const EdgeInsets.only(right: 12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.backgroundColor,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppTheme.borderColor.withOpacity(0.3)),
-                      ),
-                      child: Icon(
-                        Icons.category_outlined,
-                        size: 18,
-                        color: AppTheme.textSecondary,
-                      ),
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: AppTheme.backgroundColor,
+                          child: Icon(
+                            Icons.category_outlined,
+                            size: 18,
+                            color: AppTheme.textSecondary,
+                          ),
+                        );
+                      },
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  Expanded(
+                  ),
+                )
+                  else if (item != 'All')
+                Container(
+                  width: 32,
+                  height: 32,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.backgroundColor,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppTheme.borderColor.withOpacity(0.3)),
+                  ),
+                  child: Icon(
+                    Icons.category_outlined,
+                    size: 18,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              Expanded(
                     child: Text(
                       item,
                       style: AppTheme.bodyMedium.copyWith(
@@ -26257,10 +26468,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
               ),
-            );
+            ],
+          ),
+        );
           }).toList();
         },
         // Child: Button that looks exactly like DropdownButtonFormField
@@ -28997,10 +29208,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                 Builder(
                                   builder: (context) {
                                     final currentValue = () {
-                                      if (selectedAccountId == null) return null;
-                                      return accounts.any((account) => account['id'] == selectedAccountId)
-                                          ? selectedAccountId
-                                          : null;
+                                    if (selectedAccountId == null) return null;
+                                    return accounts.any((account) => account['id'] == selectedAccountId)
+                                        ? selectedAccountId
+                                        : null;
                                     }();
                                     
                                     // Get selected account display text
@@ -29036,8 +29247,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                           maxHeight: 300,
                                         ),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                         onSelected: (String? newValue) {
                                           if (newValue != null) {
                                             setDialogState(() {
@@ -29055,34 +29266,34 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                         },
                                         itemBuilder: (context) {
                                           return [
-                                            // Add "None" option
+                                    // Add "None" option
                                             PopupMenuItem<String?>(
-                                              value: null,
+                                      value: null,
                                               padding: const EdgeInsets.symmetric(
                                                 horizontal: 12,
                                                 vertical: 8,
                                               ),
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.payment, size: 20, color: AppTheme.primaryColor),
-                                                  const SizedBox(width: 12),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.payment, size: 20, color: AppTheme.primaryColor),
+                                          const SizedBox(width: 12),
                                                   const Expanded(
                                                     child: Text('Select Payment Mode Only'),
                                                   ),
-                                                ],
-                                              ),
-                                            ),
-                                            ...accounts.map((account) {
-                                              final autoPayStatus = account['autoPay'] == true ? 'ON' : 'OFF';
+                                        ],
+                                      ),
+                                    ),
+                                    ...accounts.map((account) {
+                                      final autoPayStatus = account['autoPay'] == true ? 'ON' : 'OFF';
                                               final isSelected = account['id'] == currentValue;
                                               return PopupMenuItem<String?>(
-                                                value: account['id'],
+                                        value: account['id'],
                                                 padding: const EdgeInsets.symmetric(
                                                   horizontal: 12,
                                                   vertical: 8,
                                                 ),
-                                                child: Row(
-                                                  children: [
+                                        child: Row(
+                                          children: [
                                                     if (isSelected)
                                                       Icon(
                                                         Icons.check,
@@ -29092,26 +29303,26 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                                     else
                                                       const SizedBox(width: 18),
                                                     if (isSelected) const SizedBox(width: 8),
-                                                    Icon(
-                                                      _getModeIcon(account['mode']),
-                                                      size: 20,
-                                                      color: AppTheme.primaryColor,
-                                                    ),
-                                                    const SizedBox(width: 12),
+                                            Icon(
+                                              _getModeIcon(account['mode']),
+                                              size: 20,
+                                              color: AppTheme.primaryColor,
+                                            ),
+                                            const SizedBox(width: 12),
                                                     Expanded(
-                                                      child: Text(
-                                                        '${account['name'] ?? 'Unknown'} (Auto Pay: $autoPayStatus)',
-                                                        overflow: TextOverflow.ellipsis,
+                                              child: Text(
+                                                '${account['name'] ?? 'Unknown'} (Auto Pay: $autoPayStatus)',
+                                                overflow: TextOverflow.ellipsis,
                                                         style: TextStyle(
                                                           color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
                                                           fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                                                         ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            }).toList(),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
                                           ];
                                         },
                                         // Child: Button that looks exactly like DropdownButtonFormField

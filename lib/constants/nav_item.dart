@@ -9,6 +9,7 @@ enum NavItem {
   transactionTransactions,
   users,
   roles,
+  assignWallets,
   accountReports,
   paymentModes,
   expenseType,
