@@ -621,6 +621,12 @@ class PermissionTreeBuilder {
                 ),
               ],
             ),
+            // Assign Wallet
+            PermissionNode(
+              id: 'all_users.assign_wallet',
+              label: 'Assign Wallet',
+              description: 'Permission to assign wallet to users',
+            ),
           ],
         ),
         // Accounts Section

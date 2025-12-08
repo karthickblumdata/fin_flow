@@ -3914,7 +3914,24 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               // Add operations: operation = 'add'
               // Withdraw operations: operation = 'subtract' and no relatedId (expense/transaction would have relatedId)
               if (operation == 'add') {
-                itemMap['type'] = 'Add Amount';
+                // Check if it's related to an expense or transaction (has relatedId)
+                // If it has relatedId, it's NOT a direct "Add Amount" operation
+                final hasRelatedId = itemMap['relatedId'] != null;
+                final relatedModel = itemMap['relatedModel']?.toString() ?? '';
+                final walletTransactionType = itemMap['type']?.toString() ?? '';
+                
+                if (hasRelatedId && (relatedModel == 'Expense' || relatedModel == 'Transaction' || walletTransactionType == 'expense' || walletTransactionType == 'transaction')) {
+                  // This is an expense reimbursement or transaction receipt
+                  // Don't show as "Add Amount", show as "Expenses" or "WalletTransactions" based on relatedModel
+                  if (relatedModel == 'Expense' || walletTransactionType == 'expense') {
+                    itemMap['type'] = 'Expenses';
+                  } else {
+                    itemMap['type'] = 'WalletTransactions';
+                  }
+                } else {
+                  // This is a direct "Add Amount" operation (no related expense/transaction)
+                  itemMap['type'] = 'Add Amount';
+                }
               } else if (operation == 'subtract') {
                 // Check if it's a withdraw (no relatedId) vs expense/transaction (has relatedId)
                 final hasRelatedId = itemMap['relatedId'] != null;
@@ -4148,6 +4165,51 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               return itemId == null || !walletTransactionIdsToRemove.contains(itemId);
             }).toList();
             debugPrint('[SELF WALLET] 🔄 Removed ${beforeCount - transformedReportData.length} duplicate WalletTransactions (kept Transaction entries)');
+          }
+          
+          // Remove duplicate entries: If WalletTransaction has relatedId pointing to Expense,
+          // hide the WalletTransaction and show only the Expense
+          final Set<String> expenseIds = {};
+          final Set<String> expenseWalletTransactionIdsToRemove = {};
+          
+          // First pass: Collect all Expense IDs
+          for (var item in transformedReportData) {
+            if (item['type'] == 'Expenses') {
+              final expenseId = item['id']?.toString() ?? item['_id']?.toString();
+              if (expenseId != null && expenseId.isNotEmpty) {
+                expenseIds.add(expenseId);
+              }
+            }
+          }
+          
+          // Second pass: Find WalletTransactions that have relatedId matching Expense IDs
+          for (var item in transformedReportData) {
+            final itemType = item['type']?.toString() ?? '';
+            final relatedId = item['relatedId']?.toString();
+            final relatedModel = item['relatedModel']?.toString();
+            
+            // If this is a WalletTransaction with relatedId pointing to an Expense
+            if ((itemType == 'Expenses' || itemType == 'WalletTransactions') &&
+                relatedId != null && 
+                relatedModel == 'Expense' &&
+                expenseIds.contains(relatedId)) {
+              // Mark this WalletTransaction for removal (keep only the Expense document)
+              final walletTransactionId = item['id']?.toString() ?? item['_id']?.toString();
+              if (walletTransactionId != null && walletTransactionId.isNotEmpty) {
+                expenseWalletTransactionIdsToRemove.add(walletTransactionId);
+                debugPrint('[SELF WALLET] 🔄 Removing duplicate WalletTransaction (ID: $walletTransactionId) - related to Expense (ID: $relatedId)');
+              }
+            }
+          }
+          
+          // Remove WalletTransactions that are duplicates of Expenses
+          if (expenseWalletTransactionIdsToRemove.isNotEmpty) {
+            final beforeCount = transformedReportData.length;
+            transformedReportData = transformedReportData.where((item) {
+              final itemId = item['id']?.toString() ?? item['_id']?.toString();
+              return itemId == null || !expenseWalletTransactionIdsToRemove.contains(itemId);
+            }).toList();
+            debugPrint('[SELF WALLET] 🔄 Removed ${beforeCount - transformedReportData.length} duplicate WalletTransactions (kept Expense entries)');
           }
         }
 
@@ -4533,6 +4595,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         debugPrint('   Mode: Expense Report Only');
         debugPrint('   isSelfWallet: $isSelfWallet');
         
+        // CRITICAL: Clear allData to ensure no Add Amount/Withdraw entries from previous loads
+        allData.clear();
+        debugPrint('   ✅ [EXPENSE REPORT] Cleared allData to ensure only expenses are shown');
+        
         final targetUserId = isSelfWallet ? currentUserId : (userIdsForDetailedData != null && userIdsForDetailedData.length == 1 ? userIdsForDetailedData.first : null);
         debugPrint('   Target User ID: ${targetUserId ?? "All Users"}');
         debugPrint('   Status Filter: ${filterProvider.selectedStatus ?? "All"}');
@@ -4582,7 +4648,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           debugPrint('   Expenses from backend (already filtered by date): ${expenses.length} items');
           debugPrint('   Summary from backend: $summary');
           
-          // Process expenses for display
+          // Process expenses for display - ONLY expenses, no Add Amount or Withdraw
           final processedExpenses = expenses.map((e) {
             final amount = _parseAmount(e['amount']);
             // Get created by person name
@@ -4593,15 +4659,21 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             final categoryName = e['category']?.toString() ?? 'Unknown';
             return {
               ...e,
-              'type': 'Expenses',
+              'type': 'Expenses', // Ensure type is Expenses
               'date': e['date'] ?? e['createdAt'],
               'from': createdByName,
               'to': categoryName,
               'amount': amount,
               'status': e['status'] ?? 'Pending',
             };
+          }).where((e) {
+            // Double-check: Only include items with type 'Expenses', exclude Add Amount and Withdraw
+            final itemType = e['type']?.toString() ?? '';
+            return itemType == 'Expenses';
           }).toList();
           
+          // Clear allData first to ensure no Add Amount entries from previous loads
+          allData.clear();
           allData.addAll(processedExpenses);
           
           debugPrint('   ✅ [EXPENSE REPORT] Added ${processedExpenses.length} expenses to allData');
@@ -12036,7 +12108,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-          // Payment Mode Selection
+          // Payment Mode Selection - Using PopupMenuButton with bottom alignment (same as Add Collection)
                           _paymentModes.isEmpty
                               ? Container(
                                   padding: const EdgeInsets.all(16),
@@ -12066,46 +12138,134 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                     ],
                                   ),
                                 )
-                              : DropdownButtonFormField<String>(
-                                  value: () {
-                                    final selectedValue = preservedPaymentModeId ?? _selectedAccountId;
-                                    if (selectedValue == null) return null;
-                                    return _paymentModes.any((mode) => (mode['_id'] ?? mode['id'])?.toString() == selectedValue)
-                                        ? selectedValue
-                                        : null;
-                                  }(),
-                                  decoration: InputDecoration(
-                                    labelText: 'Payment Mode',
-                                    prefixIcon: const Icon(Icons.payment),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: isMobile ? 16 : 14,
-                                    ),
-                                  ),
-                                  style: TextStyle(
-                                    fontSize: isMobile ? 16 : 15,
-                                  ),
-                                  items: _paymentModes.map((mode) {
-                                    final modeId = (mode['_id'] ?? mode['id'])?.toString() ?? '';
-                                    final modeName = mode['modeName']?.toString() ?? 'Unknown Payment Mode';
-                                    return DropdownMenuItem<String>(
-                                      value: modeId,
-                                      child: Text(modeName),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setDialogState(() {
-                                      _selectedAccountId = value;
-                                    });
-                                  },
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Please select a payment mode';
+                              : Builder(
+                                  builder: (context) {
+                                    // Get selected payment mode display text
+                                    final currentValue = preservedPaymentModeId ?? _selectedAccountId;
+                                    String displayText = 'Select Payment Mode';
+                                    if (currentValue != null) {
+                                      final selectedMode = _paymentModes.firstWhere(
+                                        (mode) {
+                                          final modeId = (mode['_id'] ?? mode['id'])?.toString() ?? '';
+                                          return modeId == currentValue;
+                                        },
+                                        orElse: () => <String, dynamic>{},
+                                      );
+                                      if (selectedMode.isNotEmpty) {
+                                        displayText = (selectedMode['modeName'] ?? 'Unknown Payment Mode').toString();
+                                      }
                                     }
-                                    return null;
+                                    
+                                    // Calculate button height for proper menu offset (aligned at bottom of text box)
+                                    // InputDecorator with label actual height:
+                                    // Mobile: ~74px, Desktop: ~82px (including label, padding, border)
+                                    final double buttonHeight = isMobile ? 74.0 : 82.0;
+                                    final Offset menuOffset = Offset(0, buttonHeight + 4); // 4px gap below text box
+                                    
+                                    return SizedBox(
+                                      width: double.infinity,
+                                      child: Material(
+                                        elevation: 8,
+                                        color: Colors.transparent,
+                                        shadowColor: Colors.transparent,
+                                        child: PopupMenuButton<String>(
+                                          offset: menuOffset, // Position menu at bottom of text box with 4px gap
+                                          // Ensure menu always opens below (prevent auto-positioning above)
+                                          clipBehavior: Clip.none,
+                                          elevation: 8,
+                                          shadowColor: Colors.black.withOpacity(0.08),
+                                          surfaceTintColor: Colors.transparent,
+                                          color: Colors.white,
+                                          tooltip: '', // Hide tooltip to prevent "Show menu" button
+                                          constraints: BoxConstraints(
+                                            minWidth: isMobile ? double.infinity : 300,
+                                            maxWidth: isMobile ? double.infinity : 400,
+                                            maxHeight: isMobile ? 300 : 400,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          onSelected: (String? newValue) {
+                                            if (newValue != null) {
+                                              setDialogState(() {
+                                                _selectedAccountId = newValue;
+                                              });
+                                            }
+                                          },
+                                          itemBuilder: (context) {
+                                            return _paymentModes.map<PopupMenuEntry<String>>((mode) {
+                                              final modeId = (mode['_id'] ?? mode['id'])?.toString() ?? '';
+                                              final modeName = (mode['modeName'] ?? 'Unknown Payment Mode').toString();
+                                              final isSelected = modeId == currentValue;
+                                              
+                                              return PopupMenuItem<String>(
+                                                value: modeId,
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: isMobile ? 10 : 8,
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    if (isSelected)
+                                                      Icon(
+                                                        Icons.check,
+                                                        size: 18,
+                                                        color: AppTheme.primaryColor,
+                                                      )
+                                                    else
+                                                      const SizedBox(width: 18),
+                                                    if (isSelected) const SizedBox(width: 8),
+                                                    Icon(
+                                                      Icons.payment,
+                                                      size: 20,
+                                                      color: AppTheme.primaryColor,
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      child: Text(
+                                                        modeName,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                                          color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }).toList();
+                                          },
+                                          // Child: Button that looks exactly like DropdownButtonFormField (same as Add Collection)
+                                          child: InputDecorator(
+                                            decoration: InputDecoration(
+                                              labelText: 'Payment Mode',
+                                              floatingLabelBehavior: FloatingLabelBehavior.always,
+                                              prefixIcon: const Icon(Icons.payment),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              contentPadding: EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: isMobile ? 16 : 18,
+                                              ),
+                                              suffixIcon: const Icon(Icons.arrow_drop_down),
+                                            ),
+                                            isFocused: false,
+                                            isEmpty: false, // Always show label at top to prevent overlap
+                                            child: Text(
+                                              displayText,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: isMobile ? 16 : 15,
+                                                color: currentValue == null ? AppTheme.textSecondary : AppTheme.textPrimary,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
                                   },
                                 ),
           SizedBox(height: isMobile ? 16 : 20),
@@ -12616,7 +12776,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                        // Account Selection
+                        // Account Selection - Using PopupMenuButton with bottom alignment (same as Add Collection)
                           _allAccountsList.isEmpty
                               ? Container(
                                   padding: const EdgeInsets.all(16),
@@ -12646,41 +12806,136 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                     ],
                                   ),
                                 )
-                              : DropdownButtonFormField<String>(
-                                  value: () {
-                                    final selectedValue = preservedAccountId ?? _selectedAccountId;
-                                    if (selectedValue == null) return null;
-                                    return _allAccountsList.any((account) => account['id']?.toString() == selectedValue)
-                                        ? selectedValue
-                                        : null;
-                                  }(),
-                                      decoration: InputDecoration(
-                                        labelText: 'Account',
-                                        prefixIcon: const Icon(Icons.account_balance),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
+                              : Builder(
+                                  builder: (context) {
+                                    // Get selected account display text
+                                    final currentValue = preservedAccountId ?? _selectedAccountId;
+                                    String displayText = 'Select Account';
+                                    if (currentValue != null) {
+                                      final selectedAccount = _allAccountsList.firstWhere(
+                                        (acc) {
+                                          final accId = (acc['id'] ?? acc['_id'])?.toString() ?? '';
+                                          return accId == currentValue;
+                                        },
+                                        orElse: () => <String, dynamic>{},
+                                      );
+                                      if (selectedAccount.isNotEmpty) {
+                                        displayText = (selectedAccount['name'] ?? selectedAccount['modeName'] ?? 'Unknown Account').toString();
+                                      }
+                                    }
+                                    
+                                    // Calculate button height for proper menu offset (aligned at bottom of text box)
+                                    // InputDecorator with label actual height:
+                                    // Mobile: ~74px, Desktop: ~82px (including label, padding, border)
+                                    final double buttonHeight = isMobile ? 74.0 : 82.0;
+                                    final Offset menuOffset = Offset(0, buttonHeight + 4); // 4px gap below text box
+                                    
+                                    return SizedBox(
+                                      width: double.infinity,
+                                      child: Material(
+                                        elevation: 8,
+                                        color: Colors.transparent,
+                                        shadowColor: Colors.transparent,
+                                        child: PopupMenuButton<String>(
+                                          offset: menuOffset, // Position menu at bottom of text box with 4px gap
+                                          // Ensure menu always opens below (prevent auto-positioning above)
+                                          clipBehavior: Clip.none,
+                                          elevation: 8,
+                                          shadowColor: Colors.black.withOpacity(0.08),
+                                          surfaceTintColor: Colors.transparent,
+                                          color: Colors.white,
+                                          tooltip: '', // Hide tooltip to prevent "Show menu" button
+                                          constraints: BoxConstraints(
+                                            minWidth: isMobile ? double.infinity : 300,
+                                            maxWidth: isMobile ? double.infinity : 400,
+                                            maxHeight: isMobile ? 300 : 400,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          onSelected: (String? newValue) {
+                                            if (newValue != null) {
+                                              setDialogState(() {
+                                                _selectedAccountId = newValue;
+                                              });
+                                            }
+                                          },
+                                          itemBuilder: (context) {
+                                            return _allAccountsList.map<PopupMenuEntry<String>>((account) {
+                                              final accountId = (account['id'] ?? account['_id'])?.toString() ?? '';
+                                              final accountName = (account['name'] ?? account['modeName'] ?? 'Unknown Account').toString();
+                                              final isSelected = accountId == currentValue;
+                                              
+                                              return PopupMenuItem<String>(
+                                                value: accountId,
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: isMobile ? 10 : 8,
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    if (isSelected)
+                                                      Icon(
+                                                        Icons.check,
+                                                        size: 18,
+                                                        color: AppTheme.primaryColor,
+                                                      )
+                                                    else
+                                                      const SizedBox(width: 18),
+                                                    if (isSelected) const SizedBox(width: 8),
+                                                    Icon(
+                                                      Icons.account_balance_outlined,
+                                                      size: 20,
+                                                      color: AppTheme.primaryColor,
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      child: Text(
+                                                        accountName,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                                          color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }).toList();
+                                          },
+                                          // Child: Button that looks exactly like DropdownButtonFormField (same as Add Collection)
+                                          child: InputDecorator(
+                                            decoration: InputDecoration(
+                                              labelText: 'Account',
+                                              floatingLabelBehavior: FloatingLabelBehavior.always,
+                                              prefixIcon: const Icon(Icons.account_balance),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              contentPadding: EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: isMobile ? 16 : 18,
+                                              ),
+                                              suffixIcon: const Icon(Icons.arrow_drop_down),
+                                            ),
+                                            isFocused: false,
+                                            isEmpty: false, // Always show label at top to prevent overlap
+                                            child: Text(
+                                              displayText,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: isMobile ? 16 : 15,
+                                                color: currentValue == null ? AppTheme.textSecondary : AppTheme.textPrimary,
+                                              ),
+                                            ),
+                                          ),
                                         ),
-                          ),
-                                  items: _allAccountsList.map((account) {
-                                    final accountId = account['id']?.toString() ?? '';
-                                    final accountName = account['name']?.toString() ?? 'Unknown Account';
-                            return DropdownMenuItem<String>(
-                                      value: accountId,
-                                      child: Text(accountName),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              _selectedAccountId = value;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please select an account';
-                            }
-                            return null;
-                          },
-                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                         const SizedBox(height: 20),
                         
                         // Amount Input
@@ -26345,11 +26600,18 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     required bool isTablet,
   }) {
     // Ensure currentValue is included in options if it's set and not 'All'
-    final Set<String> expenseTypeSet = {'All', ..._expenseCategories};
+    // Create a fresh list each time to ensure dropdown updates when _expenseCategories changes
+    final Set<String> expenseTypeSet = {'All'};
+    // Add all expense categories
+    expenseTypeSet.addAll(_expenseCategories);
+    // If currentValue is set and not 'All', ensure it's in the list
     if (currentValue != null && currentValue != 'All' && !expenseTypeSet.contains(currentValue)) {
       expenseTypeSet.add(currentValue);
     }
     final expenseTypeOptions = expenseTypeSet.toList();
+    
+    // Debug: Log when dropdown is built
+    debugPrint('🔍 [EXPENSE TYPE FILTER] Building dropdown with ${expenseTypeOptions.length} options: $expenseTypeOptions');
     
     // Validate that currentValue exists in options, otherwise use 'All'
     final validatedValue = (currentValue != null && expenseTypeOptions.contains(currentValue))
@@ -26374,6 +26636,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       color: Colors.transparent,
       shadowColor: Colors.transparent, // Hide Material shadow, we only need elevation for z-index
       child: PopupMenuButton<String>(
+        key: ValueKey('expense_type_filter_${expenseTypeOptions.length}_${_expenseCategories.join('_')}'), // Force rebuild when categories change
         offset: menuOffset, // Position menu at bottom of button
         elevation: 8,
         shadowColor: Colors.black.withOpacity(0.08),
@@ -26388,9 +26651,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           borderRadius: BorderRadius.circular(8), // Rounded corners for dropdown menu
         ),
         onSelected: (value) {
+          debugPrint('🔍 [EXPENSE TYPE FILTER] Selected: $value');
           onChanged(value);
         },
         itemBuilder: (context) {
+          debugPrint('🔍 [EXPENSE TYPE FILTER] Building menu with ${expenseTypeOptions.length} items');
           return expenseTypeOptions.map<PopupMenuEntry<String>>((String item) {
             final isSelected = item == validatedValue;
             final itemImageUrl = item != 'All' ? _getExpenseTypeImageUrl(item) : null;
