@@ -3373,7 +3373,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             debugPrint('   message: ${walletReportResult['message'] ?? 'Unknown error'}');
             debugPrint('   full response: $walletReportResult');
             debugPrint('═══════════════════════════════════════════════════════════');
-            
+          
             allWalletReportResult = {
               'success': false,
               'message': walletReportResult['message'] ?? 'Failed to fetch all accounts report',
@@ -10580,32 +10580,127 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               ),
                         const SizedBox(height: 32),
                         
-                        // Account Selection
-                        DropdownButtonFormField<String>(
-                          value: _selectedAccountId,
-                          decoration: const InputDecoration(
-                            labelText: 'Account Selection',
-                            hintText: 'Select an account',
-                            prefixIcon: Icon(Icons.account_balance_outlined),
-                          ),
-                          items: _allAccountsList.map((account) {
-                            final accountId = account['id']?.toString() ?? '';
-                            final accountName = account['name']?.toString() ?? 'Unknown Account';
-                            return DropdownMenuItem<String>(
-                              value: accountId,
-                              child: Text(accountName),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              _selectedAccountId = value;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please select an account';
+                        // Account Selection - Using PopupMenuButton with bottom alignment (same as Add Collection)
+                        Builder(
+                          builder: (context) {
+                            // Get selected account display text
+                            String displayText = 'Select Account';
+                            if (_selectedAccountId != null) {
+                              final selectedAccount = _allAccountsList.firstWhere(
+                                (acc) {
+                                  final accId = (acc['id'] ?? acc['_id'])?.toString() ?? '';
+                                  return accId == _selectedAccountId;
+                                },
+                                orElse: () => <String, dynamic>{},
+                              );
+                              if (selectedAccount.isNotEmpty) {
+                                displayText = (selectedAccount['name'] ?? 'Unknown Account').toString();
+                              }
                             }
-                            return null;
+                            
+                            // Calculate button height for proper menu offset (same as Add Collection)
+                            // InputDecorator with label has approximate height: 72px (mobile) or 80px (desktop)
+                            // This includes label (16px) + padding (20px) + content (36px) + border (2px)
+                            final double buttonHeight = isMobile ? 72.0 : 80.0;
+                            final Offset menuOffset = Offset(0, buttonHeight + 4);
+                            
+                            return SizedBox(
+                              width: double.infinity,
+                              child: Material(
+                                elevation: 8,
+                                color: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                child: PopupMenuButton<String>(
+                                  offset: menuOffset, // Position menu at bottom of button (same as Add Collection)
+                                elevation: 8,
+                                shadowColor: Colors.black.withOpacity(0.08),
+                                surfaceTintColor: Colors.transparent,
+                                color: Colors.white,
+                                constraints: BoxConstraints(
+                                  minWidth: isMobile ? double.infinity : 300,
+                                  maxWidth: isMobile ? double.infinity : 400,
+                                  maxHeight: isMobile ? 300 : 400,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                onSelected: (String? newValue) {
+                                  if (newValue != null) {
+                            setDialogState(() {
+                                      _selectedAccountId = newValue;
+                            });
+                                  }
+                                },
+                                itemBuilder: (context) {
+                                  return _allAccountsList.map<PopupMenuEntry<String>>((account) {
+                                    final accountId = (account['id'] ?? account['_id'])?.toString() ?? '';
+                                    final accountName = (account['name'] ?? account['modeName'] ?? 'Unknown Account').toString();
+                                    final isSelected = accountId == _selectedAccountId;
+                                    
+                                    return PopupMenuItem<String>(
+                                      value: accountId,
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: isMobile ? 10 : 8,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          if (isSelected)
+                                            Icon(
+                                              Icons.check,
+                                              size: 18,
+                                              color: AppTheme.primaryColor,
+                                            )
+                                          else
+                                            const SizedBox(width: 18),
+                                          if (isSelected) const SizedBox(width: 8),
+                                          Icon(
+                                            Icons.account_balance_outlined,
+                                            size: 20,
+                                            color: AppTheme.primaryColor,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              accountName,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                                color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList();
+                                },
+                                // Child: Button that looks exactly like DropdownButtonFormField (same as Add Collection)
+                                child: InputDecorator(
+                                  decoration: InputDecoration(
+                                    labelText: 'Account Selection',
+                                    hintText: 'Select an account',
+                                    prefixIcon: const Icon(Icons.account_balance_outlined),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: isMobile ? 10 : 14,
+                                    ),
+                                    suffixIcon: const Icon(Icons.arrow_drop_down),
+                                  ),
+                                  isFocused: false,
+                                  isEmpty: _selectedAccountId == null,
+                                  child: Text(
+                                    displayText,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            );
                           },
                         ),
                         const SizedBox(height: 20),
