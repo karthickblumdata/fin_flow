@@ -507,11 +507,46 @@ class ExpenseService {
     }
   }
 
+  /// Unapprove expense
+  /// If fromAllWalletReport is true, allows unapproval regardless of status
+  static Future<Map<String, dynamic>> unapproveExpense(
+      String expenseId, {bool fromAllWalletReport = false}) async {
+    try {
+      String url = ApiConstants.expenseUnapprove(expenseId);
+      final requestData = <String, dynamic>{};
+      if (fromAllWalletReport) {
+        url += '?fromAllWalletReport=true';
+        requestData['fromAllWalletReport'] = true;
+      }
+      final response = await ApiService.post(
+        url,
+        requestData,
+      );
+
+      return {
+        'success': true,
+        'message': response['message'] ?? 'Expense unapproved successfully',
+        'expense': response['expense'],
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString().replaceFirst('Exception: ', ''),
+      };
+    }
+  }
+
   /// Update expense status (e.g., mark as Unapproved)
   /// If fromAllWalletReport is true, allows status update regardless of current status
+  /// Note: For 'Unapproved' status, use unapproveExpense() instead
   static Future<Map<String, dynamic>> updateExpenseStatus(
       String expenseId, String status, {bool fromAllWalletReport = false}) async {
     try {
+      // If status is 'Unapproved', use the dedicated unapprove endpoint
+      if (status == 'Unapproved' || status == 'unapproved') {
+        return await unapproveExpense(expenseId, fromAllWalletReport: fromAllWalletReport);
+      }
+      
       final requestData = <String, dynamic>{'status': status};
       if (fromAllWalletReport) {
         requestData['fromAllWalletReport'] = true;

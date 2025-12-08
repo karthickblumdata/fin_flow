@@ -43,6 +43,7 @@ import '../common/all_transactions_screen.dart';
 import '../common/roles_screen.dart';
 import '../common/payment_modes_screen.dart';
 import '../common/pending_approvals_screen.dart';
+import '../common/ipo_assign_wallets_screen.dart';
 import '../../widgets/add_collection_dialog.dart';
 import '../../widgets/timeline_item_widget.dart';
 import '../../utils/ui_permission_checker.dart';
@@ -8360,6 +8361,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     if (item == NavItem.expenseReport) return 'Expense Report';
     if (item == NavItem.smartApprovals) return 'Smart Approvals';
     if (item == NavItem.collectionCustomField) return 'Collection Custom Field';
+    if (item == NavItem.assignWallets) return 'Assign Wallets';
 
     return 'Dashboard';
   }
@@ -10434,7 +10436,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           highlightRole: _highlightRole, // Pass role to highlight
         );
       case NavItem.assignWallets:
-        return _buildComingSoonScreen('Assign Wallets');
+        return const IpoAssignWalletsScreen(embedInDashboard: true);
       case NavItem.accountReports:
         return _buildDashboardContent(
           isAllAccounts: true,
@@ -11061,7 +11063,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                         ),
                         const SizedBox(height: 24),
                         
-                        // Account Selection - Using PopupMenuButton with bottom alignment
+                        // Account Selection - Using PopupMenuButton with bottom alignment (same as Filter by Type)
                         _allAccountsList.isEmpty
                             ? Container(
                                 padding: const EdgeInsets.all(16),
@@ -11109,12 +11111,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                     }
                                   }
                                   
-                                  // Calculate button height for proper menu offset (aligned at bottom of text box)
-                                  // InputDecorator with label actual height:
-                                  // Mobile: ~76px, Desktop: ~84px (including label, padding, border)
-                                  // Using slightly higher offset to ensure menu appears exactly at bottom
-                                  final double buttonHeight = isMobile ? 76.0 : 84.0;
-                                  final Offset menuOffset = Offset(0, buttonHeight); // Menu starts exactly at bottom of button
+                                  // Calculate button height for proper menu offset
+                                  // Using same alignment as Add Collection dropdown
+                                  final double buttonHeight = isMobile ? 48.0 : 56.0;
+                                  final Offset menuOffset = Offset(0, buttonHeight + 4);
                                   
                                   return SizedBox(
                                     width: double.infinity,
@@ -11123,7 +11123,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                       color: Colors.transparent,
                                       shadowColor: Colors.transparent,
                                       child: PopupMenuButton<String>(
-                                        offset: menuOffset, // Position menu at bottom of text box
+                                        offset: menuOffset, // Position menu at bottom of button with 4px gap
                                         // Ensure menu always opens below (prevent auto-positioning above)
                                         clipBehavior: Clip.none,
                                         elevation: 8,
@@ -11136,7 +11136,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                           maxHeight: isMobile ? 300 : 400,
                                         ),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(8), // Same as Filter by Type
                                         ),
                                         onSelected: (String? newValue) {
                                           if (newValue != null) {
@@ -11155,7 +11155,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                               value: accountId,
                                               padding: EdgeInsets.symmetric(
                                                 horizontal: 12,
-                                                vertical: isMobile ? 10 : 8,
+                                                vertical: 8, // Same as Filter by Type
                                               ),
                                               child: Row(
                                                 children: [
@@ -11178,10 +11178,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                                     child: Text(
                                                       accountName,
                                                       overflow: TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontSize: 14,
-                                                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                                      style: AppTheme.bodyMedium.copyWith(
                                                         color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                                                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                                                       ),
                                                     ),
                                                   ),
@@ -11190,25 +11189,38 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                                             );
                                           }).toList();
                                         },
-                                        // Child: Button that looks exactly like DropdownButtonFormField
+                                        // Child: Button that looks exactly like DropdownButtonFormField (same as Filter by Type)
                                         child: InputDecorator(
                                           decoration: InputDecoration(
                                             labelText: 'Account Selection',
                                             hintText: 'Select an account',
                                             prefixIcon: const Icon(Icons.account_balance_outlined),
                                             border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius: BorderRadius.circular(8), // Same as Filter by Type
+                                              borderSide: BorderSide(color: AppTheme.borderColor),
+                                            ),
+                                            enabledBorder: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: BorderSide(color: AppTheme.borderColor),
+                                            ),
+                                            focusedBorder: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
                                             ),
                                             contentPadding: EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: isMobile ? 10 : 14,
+                                              horizontal: isMobile ? 10 : 12, // Same as Filter by Type
+                                              vertical: isMobile ? 8 : 10, // Same as Filter by Type
                                             ),
-                                            suffixIcon: const Icon(Icons.arrow_drop_down),
+                                            suffixIcon: Icon(
+                                              Icons.keyboard_arrow_down,
+                                              color: AppTheme.textSecondary,
+                                            ),
                                           ),
                                           isFocused: false,
                                           isEmpty: currentValue == null,
                                           child: Text(
                                             displayText,
+                                            style: AppTheme.bodyMedium,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),

@@ -167,6 +167,7 @@ class ApiConstants {
   
   static String expenseApprove(String id) => '$getExpenses/$id/approve';
   static String expenseReject(String id) => '$getExpenses/$id/reject';
+  static String expenseUnapprove(String id) => '$getExpenses/$id/unapprove';
   static String expenseFlag(String id) => '$getExpenses/$id/flag';
   static String expenseResubmit(String id) => '$getExpenses/$id/resubmit';
   static String expenseEdit(String id) => '$getExpenses/$id';
