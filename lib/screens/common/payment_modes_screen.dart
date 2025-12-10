@@ -927,9 +927,7 @@ class _AddPaymentModeDialogState extends State<_AddPaymentModeDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _descCtrl;
-  late final TextEditingController _upiIdCtrl;
   
-  String _modeType = 'UPI';
   List<String> _display = ['Collection'];
   bool _autoTransactionCreation = false;
   String? _assignedUserId; // Store user ID for backend
@@ -941,14 +939,12 @@ class _AddPaymentModeDialogState extends State<_AddPaymentModeDialog> {
     super.initState();
     _nameCtrl = TextEditingController();
     _descCtrl = TextEditingController();
-    _upiIdCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
-    _upiIdCtrl.dispose();
     super.dispose();
   }
 
@@ -1060,62 +1056,6 @@ class _AddPaymentModeDialogState extends State<_AddPaymentModeDialog> {
                       ),
                       const SizedBox(height: 16),
                       Divider(color: Colors.grey.shade200, height: 1, thickness: 1),
-                      const SizedBox(height: 16),
-                      // 3. Payment Method (Cash/UPI/Bank)
-                      DropdownButtonFormField<String>(
-                        value: _modeType,
-                        decoration: InputDecoration(
-                          labelText: 'Payment Method',
-                          prefixIcon: const Icon(Icons.category_outlined, size: 20),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'Cash', child: Text('Cash')),
-                          DropdownMenuItem(value: 'UPI', child: Text('UPI')),
-                          DropdownMenuItem(value: 'Bank', child: Text('Bank')),
-                        ],
-                        onChanged: (v) => setState(() => _modeType = v ?? 'UPI'),
-                      ),
-                      if (_modeType == 'UPI') ...[
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _upiIdCtrl,
-                          decoration: InputDecoration(
-                            labelText: 'UPI ID',
-                            hintText: 'e.g., yourname@bank',
-                            prefixIcon: const Icon(Icons.qr_code, size: 20),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: Colors.grey.shade300),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: Colors.grey.shade300),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey.shade50,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 16),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1388,16 +1328,12 @@ class _AddPaymentModeDialogState extends State<_AddPaymentModeDialog> {
             final newMode = {
               'name': _nameCtrl.text.trim(),
               'description': _descCtrl.text.trim(),
-              'mode': _modeType,
               'display': List<String>.from(_display),
               'autoTransactionCreation': _autoTransactionCreation,
               'assignedUser': _assignedUserName, // For display
               'assignedReceiver': _assignedUserId, // For backend - send ID
               'isActive': _isActive,
             };
-            if (_modeType == 'UPI' && _upiIdCtrl.text.trim().isNotEmpty) {
-              newMode['upiId'] = _upiIdCtrl.text.trim();
-            }
             widget.onSave(newMode);
           },
           style: ElevatedButton.styleFrom(
@@ -1559,9 +1495,7 @@ class _EditPaymentModeDialogState extends State<_EditPaymentModeDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _descCtrl;
-  late final TextEditingController _upiIdCtrl;
   
-  late String _modeType;
   late List<String> _display;
   late bool _autoTransactionCreation;
   late String? _assignedUserId; // Store user ID for backend
@@ -1571,7 +1505,6 @@ class _EditPaymentModeDialogState extends State<_EditPaymentModeDialog> {
   @override
   void initState() {
     super.initState();
-    _modeType = widget.mode['mode'] as String? ?? 'UPI';
     final displayValue = widget.mode['display'];
     if (displayValue is List) {
       _display = List<String>.from(displayValue);
@@ -1593,14 +1526,12 @@ class _EditPaymentModeDialogState extends State<_EditPaymentModeDialog> {
     _isActive = widget.mode['isActive'] != false;
     _nameCtrl = TextEditingController(text: widget.mode['name'] as String? ?? '');
     _descCtrl = TextEditingController(text: widget.mode['description'] as String? ?? '');
-    _upiIdCtrl = TextEditingController(text: widget.mode['upiId'] as String? ?? '');
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
-    _upiIdCtrl.dispose();
     super.dispose();
   }
 
@@ -1746,74 +1677,6 @@ class _EditPaymentModeDialogState extends State<_EditPaymentModeDialog> {
                           // Divider
                           Divider(color: Colors.grey.shade200, height: 1, thickness: 1),
                           SizedBox(height: isMobile ? 12 : 16),
-                          // 3. Payment Method (Cash/UPI/Bank)
-                          DropdownButtonFormField<String>(
-                            value: _modeType,
-                            style: TextStyle(fontSize: isMobile ? 14 : 16),
-                            decoration: InputDecoration(
-                              labelText: 'Payment Method',
-                              labelStyle: TextStyle(fontSize: isMobile ? 14 : 16),
-                              prefixIcon: Icon(Icons.category_outlined, size: isMobile ? 18 : 20),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(color: Colors.grey.shade300),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(color: Colors.grey.shade300),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey.shade50,
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: isMobile ? 12 : 16,
-                                vertical: isMobile ? 12 : 16,
-                              ),
-                            ),
-                            items: const [
-                              DropdownMenuItem(value: 'Cash', child: Text('Cash')),
-                              DropdownMenuItem(value: 'UPI', child: Text('UPI')),
-                              DropdownMenuItem(value: 'Bank', child: Text('Bank')),
-                            ],
-                            onChanged: (v) => setState(() => _modeType = v ?? 'UPI'),
-                          ),
-                          // Show UPI ID field if UPI is selected
-                          if (_modeType == 'UPI') ...[
-                            SizedBox(height: isMobile ? 12 : 16),
-                            TextFormField(
-                              controller: _upiIdCtrl,
-                              style: TextStyle(fontSize: isMobile ? 14 : 16),
-                              decoration: InputDecoration(
-                                labelText: 'UPI ID',
-                                labelStyle: TextStyle(fontSize: isMobile ? 14 : 16),
-                                hintText: 'e.g., yourname@bank',
-                                hintStyle: TextStyle(fontSize: isMobile ? 13 : 14),
-                                prefixIcon: Icon(Icons.qr_code, size: isMobile ? 18 : 20),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: Colors.grey.shade300),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: Colors.grey.shade300),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-                                ),
-                                filled: true,
-                                fillColor: Colors.grey.shade50,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: isMobile ? 12 : 16,
-                                  vertical: isMobile ? 12 : 16,
-                                ),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 16),
                           // 4. Display (Collection/Expenses/Transaction) and Active - Button Layout
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2237,16 +2100,12 @@ class _EditPaymentModeDialogState extends State<_EditPaymentModeDialog> {
                                 final updatedMode = {
                                   'name': _nameCtrl.text.trim(),
                                   'description': _descCtrl.text.trim(),
-                                  'mode': _modeType,
                                   'display': List<String>.from(_display),
                                   'autoTransactionCreation': _autoTransactionCreation,
                                   'assignedUser': _assignedUserName, // For display
                                   'assignedReceiver': _assignedUserId, // For backend - send ID
                                   'isActive': _isActive,
                                 };
-                                if (_modeType == 'UPI' && _upiIdCtrl.text.trim().isNotEmpty) {
-                                  updatedMode['upiId'] = _upiIdCtrl.text.trim();
-                                }
                                 widget.onSave(updatedMode);
                               },
                               style: ElevatedButton.styleFrom(
@@ -2283,16 +2142,12 @@ class _EditPaymentModeDialogState extends State<_EditPaymentModeDialog> {
                           final updatedMode = {
                             'name': _nameCtrl.text.trim(),
                             'description': _descCtrl.text.trim(),
-                            'mode': _modeType,
                             'display': List<String>.from(_display),
                             'autoTransactionCreation': _autoTransactionCreation,
                             'assignedUser': _assignedUserName, // For display
                             'assignedReceiver': _assignedUserId, // For backend - send ID
                             'isActive': _isActive,
                           };
-                          if (_modeType == 'UPI' && _upiIdCtrl.text.trim().isNotEmpty) {
-                            updatedMode['upiId'] = _upiIdCtrl.text.trim();
-                          }
                           widget.onSave(updatedMode);
                         },
                         style: ElevatedButton.styleFrom(

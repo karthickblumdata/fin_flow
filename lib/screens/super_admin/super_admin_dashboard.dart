@@ -506,6 +506,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   // Account filter search/suggestion related
   String _accountFilterSearchText = '';
   List<String> _recentAccountIds = []; // Store recently used account IDs
+  
+  // Account info with wallet details (ONLY for Account Reports)
+  Map<String, dynamic>? _accountInfoWithWallet;
 
   List<Map<String, String>> _userOptions = [];
   // Note: _selectedUserIds and _selectedUserDisplayLabels are now in FilterProvider
@@ -2938,6 +2941,16 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               _cashOut = (cachedData['cashOut'] as num?)?.toDouble() ?? 0.0;
               _balance = (cachedData['balance'] as num?)?.toDouble() ?? 0.0;
               debugPrint('[SELF WALLET] 💰 Using cached summary values (from API): cashIn=$_cashIn, cashOut=$_cashOut, balance=$_balance');
+            } else if (_selectedItem == NavItem.accountReports) {
+              // For Account Reports, use cached values and sync to UI variables
+              _cashIn = (cachedData['cashIn'] as num?)?.toDouble() ?? 0.0;
+              _cashOut = (cachedData['cashOut'] as num?)?.toDouble() ?? 0.0;
+              _balance = (cachedData['balance'] as num?)?.toDouble() ?? 0.0;
+              _userCashIn = _cashIn;
+              _userCashOut = _cashOut;
+              _userBalance = _balance;
+              debugPrint('📊 [ACCOUNT REPORTS] Using cached values: cashIn=$_cashIn, cashOut=$_cashOut, balance=$_balance');
+              debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
             } else {
               // For All Wallet Report, use cached values but log for debugging
               _cashIn = (cachedData['cashIn'] as num?)?.toDouble() ?? 0.0;
@@ -3469,6 +3482,31 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 debugPrint('📊 [ACCOUNT REPORTS] Wallet report API returned summary only - detailed data will be loaded separately');
                 reportLoaded = false;
               }
+              
+              // Store account info with wallet details for Account Reports
+              if (walletReportResult['account'] != null) {
+                final accountData = walletReportResult['account'];
+                setState(() {
+                  _accountInfoWithWallet = accountData is Map<String, dynamic>
+                      ? Map<String, dynamic>.from(accountData)
+                      : (accountData is Map
+                          ? Map<String, dynamic>.from(accountData as Map)
+                          : null);
+                  if (_accountInfoWithWallet != null) {
+                    debugPrint('📊 [ACCOUNT REPORTS] Stored account wallet info from walletReportResult');
+                    debugPrint('   Account: ${_accountInfoWithWallet!['modeName']}');
+                    debugPrint('   Cash In: ${_accountInfoWithWallet!['cashIn']}');
+                    debugPrint('   Cash Out: ${_accountInfoWithWallet!['cashOut']}');
+                    debugPrint('   Total Balance: ${_accountInfoWithWallet!['totalBalance']}');
+                  }
+                });
+              } else {
+                // Clear if "All Accounts" is selected
+                setState(() {
+                  _accountInfoWithWallet = null;
+                  debugPrint('📊 [ACCOUNT REPORTS] Cleared account wallet info (All Accounts selected)');
+                });
+              }
             }
           } else {
             allWalletReportResult = {
@@ -3856,6 +3894,24 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   : <String, dynamic>{});
           // Account info is available from backend
           // We can use this to display account name in UI
+          
+          // Store account info with wallet details ONLY for Account Reports
+          if (_selectedItem == NavItem.accountReports) {
+            setState(() {
+              _accountInfoWithWallet = accountMap;
+              debugPrint('📊 [ACCOUNT REPORTS] Stored account wallet info from reportResult');
+              debugPrint('   Account: ${accountMap['modeName']}');
+              debugPrint('   Cash In: ${accountMap['cashIn']}');
+              debugPrint('   Cash Out: ${accountMap['cashOut']}');
+              debugPrint('   Total Balance: ${accountMap['totalBalance']}');
+            });
+          }
+        } else if (_selectedItem == NavItem.accountReports) {
+          // Clear if "All Accounts" is selected
+          setState(() {
+            _accountInfoWithWallet = null;
+            debugPrint('📊 [ACCOUNT REPORTS] Cleared account wallet info (All Accounts selected)');
+          });
         }
 
         // Update breakdown and store snapshot for filter restoration (from wallet_overview_screen)
@@ -4278,8 +4334,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   _cashIn = finalCashIn;
                   _cashOut = finalCashOut;
                   _balance = finalBalance;
+                  // Sync to UI display variables
+                  _userCashIn = finalCashIn;
+                  _userCashOut = finalCashOut;
+                  _userBalance = finalBalance;
                 });
                 debugPrint('📊 [ACCOUNT REPORTS] Set API summary totals: CashIn=$finalCashIn, CashOut=$finalCashOut, Balance=$finalBalance');
+                debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
               }
               // Don't call full setState here - wait for detailed data to be loaded to prevent flickering
               print('📊 [ALL WALLET REPORTS] Stored summary values, will update UI after detailed data is loaded');
@@ -4293,6 +4354,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 _cashIn = finalCashIn;
                 _cashOut = finalCashOut;
                 _balance = finalBalance;
+                // For Account Reports: Sync to UI display variables
+                if (isAccountReports) {
+                  _userCashIn = finalCashIn;
+                  _userCashOut = finalCashOut;
+                  _userBalance = finalBalance;
+                  debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables in normal setState: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
+                }
               });
               
               _cachedWalletData = {
@@ -5187,6 +5255,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               
               // API summary values are already set at line 3178-3183
               // Keep them - _applyFilters will only update if we have detailed data to recalculate from
+              // Sync to UI display variables
+              _userCashIn = _cashIn;
+              _userCashOut = _cashOut;
+              _userBalance = _balance;
+              debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
             } else {
               // No account filter: Use API summary totals (all accounts)
               debugPrint('═══════════════════════════════════════════════════════════');
@@ -5198,6 +5271,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               
               // Keep API summary values (already set from reportResult)
               // Don't overwrite with calculated values
+              // Sync to UI display variables
+              _userCashIn = _cashIn;
+              _userCashOut = _cashOut;
+              _userBalance = _balance;
+              debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
             }
           } else {
             // Only update if values haven't been set from API summary
@@ -17224,6 +17302,159 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     }
   }
 
+  // Build account wallet details card (ONLY for Account Reports)
+  Widget _buildAccountWalletDetailsCard(bool isMobile, bool isTablet) {
+    // ONLY show for Account Reports when specific account is selected
+    final bool isAccountReports = _selectedItem == NavItem.accountReports;
+    if (!isAccountReports || 
+        _accountInfoWithWallet == null || 
+        _selectedAccountFilterId == null || 
+        _selectedAccountFilterId!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    final accountName = _accountInfoWithWallet!['modeName'] ?? 'Unknown Account';
+    final cashIn = _parseAmount(_accountInfoWithWallet!['cashIn'] ?? 0);
+    final cashOut = _parseAmount(_accountInfoWithWallet!['cashOut'] ?? 0);
+    final totalBalance = _parseAmount(_accountInfoWithWallet!['totalBalance'] ?? 0);
+    final cashBalance = _parseAmount(_accountInfoWithWallet!['cashBalance'] ?? 0);
+    final upiBalance = _parseAmount(_accountInfoWithWallet!['upiBalance'] ?? 0);
+    final bankBalance = _parseAmount(_accountInfoWithWallet!['bankBalance'] ?? 0);
+    
+    return Container(
+      margin: EdgeInsets.only(
+        top: isMobile ? 16 : 20,
+        bottom: isMobile ? 16 : 20,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 16 : 24,
+        vertical: isMobile ? 0 : 4,
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(isMobile ? 16 : 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Account Name Header
+            Row(
+              children: [
+                Icon(Icons.account_balance, 
+                     color: AppTheme.primaryColor, 
+                     size: isMobile ? 20 : 24),
+                SizedBox(width: isMobile ? 8 : 12),
+                Expanded(
+                  child: Text(
+                    'Account Wallet: $accountName',
+                    style: AppTheme.headingMedium.copyWith(
+                      fontSize: isMobile ? 16 : 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: isMobile ? 16 : 20),
+            
+            // Cash In
+            _buildCompactFinancialRow(
+              icon: Icons.arrow_downward,
+              label: 'Cash In',
+              amount: cashIn,
+              color: AppTheme.secondaryColor,
+              isMobile: isMobile,
+              isTablet: isTablet,
+              amountColor: AppTheme.textSecondary,
+            ),
+            SizedBox(height: isMobile ? 8 : 10),
+            
+            // Cash Out
+            _buildCompactFinancialRow(
+              icon: Icons.arrow_upward,
+              label: 'Cash Out',
+              amount: cashOut,
+              color: AppTheme.errorColor,
+              isMobile: isMobile,
+              isTablet: isTablet,
+              amountColor: AppTheme.textSecondary,
+            ),
+            SizedBox(height: isMobile ? 8 : 10),
+            
+            // Total Balance
+            _buildCompactFinancialRow(
+              icon: Icons.account_balance_wallet,
+              label: 'Total Balance',
+              amount: totalBalance,
+              color: _getBalanceColor(totalBalance),
+              isMobile: isMobile,
+              isTablet: isTablet,
+              amountColor: _getBalanceColor(totalBalance),
+            ),
+            
+            // Breakdown (if any balance exists)
+            if (cashBalance > 0 || upiBalance > 0 || bankBalance > 0) ...[
+              SizedBox(height: isMobile ? 12 : 16),
+              Divider(color: AppTheme.borderColor),
+              SizedBox(height: isMobile ? 12 : 16),
+              Text(
+                'Balance Breakdown:',
+                style: AppTheme.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: isMobile ? 13 : 14,
+                ),
+              ),
+              SizedBox(height: isMobile ? 8 : 10),
+              if (cashBalance > 0)
+                _buildAccountBreakdownRow('Cash', cashBalance, isMobile),
+              if (upiBalance > 0)
+                _buildAccountBreakdownRow('UPI', upiBalance, isMobile),
+              if (bankBalance > 0)
+                _buildAccountBreakdownRow('Bank', bankBalance, isMobile),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountBreakdownRow(String label, double amount, bool isMobile) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isMobile ? 6 : 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            '• $label:',
+            style: AppTheme.bodyMedium.copyWith(
+              fontSize: isMobile ? 12 : 13,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          Text(
+            '₹${amount.toStringAsFixed(2)}',
+            style: AppTheme.bodyMedium.copyWith(
+              fontSize: isMobile ? 12 : 13,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCompactFinancialRow({
     required IconData icon,
     required String label,
@@ -21616,6 +21847,16 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   ),
                 ),
           SizedBox(height: isMobile ? 20 : 24),
+          
+          // Show account wallet details ONLY for Account Reports when account is selected
+          if (_selectedItem == NavItem.accountReports)
+            _buildAccountWalletDetailsCard(isMobile, isTablet),
+          
+          SizedBox(height: isMobile ? 20 : 24),
+          
+          // Show account wallet details ONLY for Account Reports when account is selected
+          if (_selectedItem == NavItem.accountReports)
+            _buildAccountWalletDetailsCard(isMobile, isTablet),
           
           // Status Count Table and Flagged Financial Flow - 2 columns on desktop
           Builder(

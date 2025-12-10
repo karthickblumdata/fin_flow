@@ -8,7 +8,6 @@ import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 import '../services/expense_service.dart';
 import '../services/expense_type_service.dart';
-import '../services/payment_mode_service.dart';
 
 class AddExpenseDialog extends StatefulWidget {
   final String userId;
@@ -33,25 +32,20 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
   final _remarkController = TextEditingController();
   
   int _currentStep = 1; // Step 1: Type Selection, Step 2: Details
-  String? _selectedMode;
+  String? _selectedMode = 'Cash'; // Default to Cash
   bool _isLoading = false;
   bool _isLoadingExpenseTypes = true;
-  bool _isLoadingModes = true;
   bool _isSubmitting = false;
   
   Map<String, dynamic>? _selectedExpenseType;
   List<Map<String, dynamic>> _expenseTypes = [];
   XFile? _selectedProofImage;
-  
-  List<Map<String, dynamic>> _paymentModes = [];
-  String? _selectedPaymentModeId;
   final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     _loadExpenseTypes();
-    _loadPaymentModes();
   }
 
   @override
@@ -112,54 +106,6 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
     }
   }
 
-  Future<void> _loadPaymentModes() async {
-    print('🔍 [AddExpenseDialog] _loadPaymentModes() called');
-    setState(() {
-      _isLoadingModes = true;
-    });
-
-    try {
-      print('🔍 [AddExpenseDialog] Calling getPaymentModes with displayType: Expenses');
-      final result = await PaymentModeService.getPaymentModes(displayType: 'Expenses');
-      print('🔍 [AddExpenseDialog] getPaymentModes response: success=${result['success']}, count=${result['paymentModes']?.length ?? 0}');
-      
-      if (mounted) {
-        if (result['success'] == true) {
-          final paymentModes = result['paymentModes'] as List<dynamic>? ?? [];
-          
-          // Store all active PaymentModes directly
-          setState(() {
-            _paymentModes = paymentModes
-                .where((pm) => pm['isActive'] == true)
-                .map((pm) => Map<String, dynamic>.from(pm))
-                .toList();
-            _isLoadingModes = false;
-            // Set default selected payment mode to first available
-            if (_paymentModes.isNotEmpty) {
-              _selectedPaymentModeId = _paymentModes.first['_id']?.toString() ?? 
-                                      _paymentModes.first['id']?.toString();
-              // Derive mode from selected PaymentMode
-              final description = _paymentModes.first['description']?.toString() ?? '';
-              final parsed = PaymentModeService.parseDescription(description);
-              _selectedMode = parsed['mode']?.toString() ?? 'Cash';
-            }
-          });
-        } else {
-          setState(() {
-            _paymentModes = [];
-            _isLoadingModes = false;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _paymentModes = [];
-          _isLoadingModes = false;
-        });
-      }
-    }
-  }
 
   bool _isProofRequired() {
     return _selectedExpenseType?['proofRequired'] == true;
@@ -245,12 +191,12 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
         }
       }
       
-      // Create expense
+      // Create expense (mode defaults to Cash, will be deducted from Payment Mode index 0 on approval)
       final result = await ExpenseService.createExpense(
         userId: widget.userId,
         category: category,
         amount: amount,
-        mode: _selectedMode ?? 'Cash',
+        mode: 'Cash', // Default to Cash, actual deduction happens from Payment Mode index 0 on approval
         description: description.isNotEmpty ? description : null,
         remarks: remark.isNotEmpty ? remark : null,
         proofUrl: proofUrl,
@@ -809,133 +755,6 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                       return null;
                     },
                   ),
-                  SizedBox(height: isMobile ? 16 : 20),
-                  
-                  // Mode Dropdown
-                  _isLoadingModes
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: AppTheme.borderColor),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                'Loading payment modes...',
-                                style: TextStyle(
-                                  fontSize: isMobile ? 16 : 15,
-                                  color: AppTheme.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : _paymentModes.isEmpty
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 16,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: AppTheme.errorColor),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.error_outline, 
-                                    color: AppTheme.errorColor, size: 20),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'No active payment modes available',
-                                    style: TextStyle(
-                                      fontSize: isMobile ? 16 : 15,
-                                      color: AppTheme.errorColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : DropdownButtonFormField<String>(
-                              value: _selectedPaymentModeId,
-                              decoration: InputDecoration(
-                                labelText: 'Payment Mode',
-                                prefixIcon: const Icon(Icons.payment),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                suffixIcon: _isLoadingModes
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: Padding(
-                                          padding: EdgeInsets.all(12.0),
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        ),
-                                      )
-                                    : null,
-                              ),
-                              items: _paymentModes.map((pm) {
-                                final modeName = pm['modeName']?.toString() ?? 'Unknown';
-                                final modeId = pm['_id']?.toString() ?? pm['id']?.toString();
-                                final description = pm['description']?.toString() ?? '';
-                                final parsed = PaymentModeService.parseDescription(description);
-                                final mode = parsed['mode']?.toString() ?? 'Cash';
-                                
-                                IconData icon;
-                                if (mode == 'Cash') {
-                                  icon = Icons.money;
-                                } else if (mode == 'UPI') {
-                                  icon = Icons.qr_code;
-                                } else {
-                                  icon = Icons.account_balance;
-                                }
-
-                                return DropdownMenuItem<String>(
-                                  value: modeId,
-                                  child: Row(
-                                    children: [
-                                      Icon(icon, size: 20, color: AppTheme.primaryColor),
-                                      const SizedBox(width: 12),
-                                      Text(modeName),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (String? newValue) {
-                                if (newValue != null) {
-                                  final selectedPM = _paymentModes.firstWhere(
-                                    (pm) => (pm['_id']?.toString() ?? pm['id']?.toString()) == newValue,
-                                    orElse: () => {},
-                                  );
-                                  if (selectedPM.isNotEmpty) {
-                                    final description = selectedPM['description']?.toString() ?? '';
-                                    final parsed = PaymentModeService.parseDescription(description);
-                                    final mode = parsed['mode']?.toString() ?? 'Cash';
-                                    
-                                    setState(() {
-                                      _selectedPaymentModeId = newValue;
-                                      _selectedMode = mode;
-                                    });
-                                  }
-                                }
-                              },
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please select a payment mode';
-                                }
-                                return null;
-                              },
-                            ),
                   SizedBox(height: isMobile ? 16 : 20),
                   
                   // Description Input (Optional)
