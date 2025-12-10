@@ -74,6 +74,10 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
     final now = DateTime.now();
     _fromDate = DateTime(now.year, now.month, now.day);
     _toDate = DateTime(now.year, now.month, now.day);
+    // Set default type filter to "Expense"
+    _selectedType = 'Expense';
+    // Set default status filter to "All"
+    _selectedStatus = 'All';
     _loadData();
     _loadUsers();
     _loadExpenseTypes(); // NEW: Load expense types
@@ -1740,9 +1744,9 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
       _selectedTransferTo = null;
       _selectedPurpose = null;
       _selectedMode = null;
-      _selectedType = null;
+      _selectedType = 'Expense'; // Reset to default "Expense"
       _selectedCollectionType = null;
-      _selectedStatus = null;
+      _selectedStatus = 'All'; // Reset to default "All"
       _selectedCategory = null;
       // Reset to current day
       final now = DateTime.now();

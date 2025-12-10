@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 import '../../utils/route_observer.dart';
+import '../../services/payment_mode_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class WalletScreen extends StatefulWidget {
@@ -108,10 +109,59 @@ class _WalletScreenState extends State<WalletScreen> with RouteAware {
     }
   }
 
+  // Helper function to extract payment mode name from transaction
+  String _extractPaymentModeName(dynamic transaction) {
+    if (transaction == null) return '';
+    
+    // Try nested paymentMode object first (from transformed data)
+    final paymentMode = transaction['paymentMode'];
+    if (paymentMode != null && paymentMode is Map) {
+      final modeName = paymentMode['modeName'] ?? paymentMode['name'] ?? paymentMode['displayName'];
+      if (modeName != null && modeName.toString().trim().isNotEmpty) {
+        return modeName.toString().trim();
+      }
+    }
+    
+    // Try paymentModeId object directly (if populated but not transformed)
+    final paymentModeId = transaction['paymentModeId'];
+    if (paymentModeId != null && paymentModeId is Map) {
+      final modeName = paymentModeId['modeName'] ?? paymentModeId['name'] ?? paymentModeId['displayName'];
+      if (modeName != null && modeName.toString().trim().isNotEmpty) {
+        return modeName.toString().trim();
+      }
+    }
+    
+    // Fallback: check mode field
+    final mode = transaction['mode'];
+    if (mode != null) {
+      if (mode is Map) {
+        // If mode is an object, extract name
+        final modeName = mode['modeName'] ?? mode['name'] ?? mode['displayName'];
+        if (modeName != null && modeName.toString().trim().isNotEmpty) {
+          return modeName.toString().trim();
+        }
+      } else if (mode is String && mode.trim().isNotEmpty) {
+        // If mode is a string, check if it's a name (not an ID)
+        final modeStr = mode.trim();
+        // If it doesn't look like an ObjectId, treat it as a name
+        if (modeStr.length != 24 || !RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(modeStr)) {
+          return modeStr;
+        }
+      }
+    }
+    
+    return '';
+  }
+
   Map<String, dynamic> _formatTransaction(dynamic transaction) {
     final date = transaction['createdAt'] != null 
         ? DateTime.parse(transaction['createdAt']).toLocal()
         : DateTime.now();
+    
+    // Extract payment mode name (e.g., "ONLINE", "CASH ONE") instead of just payment method type (Cash, UPI, Bank)
+    final mode = _extractPaymentModeName(transaction);
+    final fallbackMode = transaction['mode']?.toString() ?? '';
+    final finalMode = mode.isNotEmpty ? mode : fallbackMode;
     
     return {
       'id': transaction['_id'] ?? transaction['id'],
@@ -119,7 +169,7 @@ class _WalletScreenState extends State<WalletScreen> with RouteAware {
       'time': '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
       'user': transaction['sender']?['name'] ?? transaction['initiatedBy']?['name'] ?? '',
       'receiver': transaction['receiver']?['name'] ?? '',
-      'mode': transaction['mode'] ?? '',
+      'mode': finalMode,
       'amount': '₹${_formatAmount(transaction['amount'] ?? 0)}',
       'description': transaction['purpose'] ?? '',
       'status': transaction['status'] ?? '',
@@ -135,13 +185,18 @@ class _WalletScreenState extends State<WalletScreen> with RouteAware {
     final type = transaction['type'] ?? 'add';
     final typeLabel = type == 'add' ? 'Added' : type == 'withdraw' ? 'Withdrawn' : type == 'transfer' ? 'Transferred' : 'Transaction';
     
+    // Extract payment mode name (e.g., "ONLINE", "CASH ONE") instead of just payment method type (Cash, UPI, Bank)
+    final mode = _extractPaymentModeName(transaction);
+    final fallbackMode = transaction['mode']?.toString() ?? transaction['fromMode']?.toString() ?? '';
+    final finalMode = mode.isNotEmpty ? mode : fallbackMode;
+    
     return {
       'id': transaction['_id'] ?? transaction['id'],
       'date': '${date.day}-${_getMonthAbbr(date.month)}-${date.year.toString().substring(2)}',
       'time': '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
       'user': transaction['userId']?['name'] ?? transaction['createdBy']?['name'] ?? '',
       'receiver': transaction['toUserId']?['name'] ?? '',
-      'mode': transaction['mode'] ?? transaction['fromMode'] ?? '',
+      'mode': finalMode,
       'amount': '₹${_formatAmount(transaction['amount'] ?? 0)}',
       'description': transaction['notes'] ?? '',
       'status': transaction['status'] ?? '',

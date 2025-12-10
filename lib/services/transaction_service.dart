@@ -45,6 +45,7 @@ class TransactionService {
     required String mode,
     String? purpose,
     String? proofUrl,
+    String? paymentModeId,
   }) async {
     try {
       final response = await ApiService.post(ApiConstants.createTransaction, {
@@ -54,6 +55,7 @@ class TransactionService {
         'mode': mode,
         if (purpose != null) 'purpose': purpose,
         if (proofUrl != null) 'proofUrl': proofUrl,
+        if (paymentModeId != null && paymentModeId.isNotEmpty) 'paymentModeId': paymentModeId,
       });
 
       return {

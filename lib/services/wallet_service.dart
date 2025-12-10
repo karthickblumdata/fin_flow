@@ -78,6 +78,7 @@ class WalletService {
     required double amount,
     String? notes,
     String? userId,
+    String? paymentModeId,
   }) async {
     try {
       // Validation
@@ -106,6 +107,10 @@ class WalletService {
       
       if (userId != null && userId.isNotEmpty) {
         body['userId'] = userId;
+      }
+      
+      if (paymentModeId != null && paymentModeId.isNotEmpty) {
+        body['paymentModeId'] = paymentModeId;
       }
 
       final response = await ApiService.post(ApiConstants.addWallet, body);
@@ -513,7 +518,30 @@ class WalletService {
 
       final data = response['data'] is List
           ? List<Map<String, dynamic>>.from(
-              (response['data'] as List).map((item) => item is Map ? Map<String, dynamic>.from(item as Map) : <String, dynamic>{}),
+              (response['data'] as List).map((item) {
+                if (item is Map) {
+                  final mapped = Map<String, dynamic>.from(item as Map);
+                  // Debug: Log paymentMode for Transactions, Expenses, and WalletTransactions
+                  final type = mapped['type']?.toString() ?? '';
+                  if (type == 'Transactions' || type == 'Expenses' || type == 'Add Amount' || type == 'Withdraw') {
+                    if (mapped['paymentMode'] != null) {
+                      print('🔍 [WALLET SERVICE] ✅ Found paymentMode for $type');
+                      print('   paymentMode type: ${mapped['paymentMode'].runtimeType}');
+                      if (mapped['paymentMode'] is Map) {
+                        final pm = mapped['paymentMode'] as Map;
+                        print('   paymentMode[_id]: ${pm['_id']}');
+                        print('   paymentMode[modeName]: ${pm['modeName']}');
+                        print('   paymentMode[description]: ${pm['description']}');
+                      }
+                    } else {
+                      print('🔍 [WALLET SERVICE] ⚠️  No paymentMode for $type (ID: ${mapped['id'] ?? mapped['_id']})');
+                      print('   paymentModeId: ${mapped['paymentModeId']}');
+                    }
+                  }
+                  return mapped;
+                }
+                return <String, dynamic>{};
+              }),
             )
           : <Map<String, dynamic>>[];
 
@@ -521,6 +549,7 @@ class WalletService {
       final breakdownRaw = response['breakdown'];
       final walletRaw = response['wallet'];
       final walletSummaryRaw = response['walletSummary'];
+      final accountRaw = response['account']; // Account info for Account Reports
 
       return {
         'success': success,
@@ -529,6 +558,7 @@ class WalletService {
         'walletSummary': walletSummaryRaw is Map ? Map<String, dynamic>.from(walletSummaryRaw as Map) : null,
         'summary': summaryRaw is Map ? Map<String, dynamic>.from(summaryRaw as Map) : <String, dynamic>{},
         'breakdown': breakdownRaw is Map ? Map<String, dynamic>.from(breakdownRaw as Map) : <String, dynamic>{},
+        'account': accountRaw is Map ? Map<String, dynamic>.from(accountRaw as Map) : (accountRaw != null ? accountRaw : null), // Account info with wallet details
         'count': response['count'] ?? 0,
         'message': response['message'],
       };

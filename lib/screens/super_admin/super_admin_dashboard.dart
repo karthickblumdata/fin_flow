@@ -506,9 +506,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   // Account filter search/suggestion related
   String _accountFilterSearchText = '';
   List<String> _recentAccountIds = []; // Store recently used account IDs
-  
+
   // Account info with wallet details (ONLY for Account Reports)
   Map<String, dynamic>? _accountInfoWithWallet;
+  
+  // Aggregated wallet info for "All Accounts" (All Active Payment Modes)
+  Map<String, dynamic>? _allAccountsWalletInfo;
 
   List<Map<String, String>> _userOptions = [];
   // Note: _selectedUserIds and _selectedUserDisplayLabels are now in FilterProvider
@@ -3328,6 +3331,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           );
           
           if (walletReportResult['success'] == true) {
+            // Calculate aggregated totals for "All Accounts" from payment modes
+            _calculateAllAccountsWalletInfo();
+            
             final summary = walletReportResult['summary'] ?? <String, dynamic>{};
             final data = walletReportResult['data'] ?? <Map<String, dynamic>>[];
             
@@ -3433,6 +3439,92 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           );
           
           if (walletReportResult['success'] == true) {
+            // Store account info with wallet details FIRST (before processing data)
+            // This ensures wallet values are available when "No data" check happens
+            if (walletReportResult['account'] != null) {
+              final accountData = walletReportResult['account'];
+              setState(() {
+                _accountInfoWithWallet = accountData is Map<String, dynamic>
+                    ? Map<String, dynamic>.from(accountData)
+                    : (accountData is Map
+                        ? Map<String, dynamic>.from(accountData as Map)
+                        : null);
+                if (_accountInfoWithWallet != null) {
+                  debugPrint('📊 [ACCOUNT REPORTS] ✅ Stored account wallet info from walletReportResult (BEFORE data processing)');
+                  debugPrint('   Account: ${_accountInfoWithWallet!['modeName']}');
+                  debugPrint('   Cash In: ${_accountInfoWithWallet!['cashIn']}');
+                  debugPrint('   Cash Out: ${_accountInfoWithWallet!['cashOut']}');
+                  debugPrint('   Total Balance: ${_accountInfoWithWallet!['totalBalance']}');
+                  
+                  // Update summary cards with payment mode wallet values IMMEDIATELY
+                  final walletCashIn = _parseAmount(_accountInfoWithWallet!['cashIn'] ?? 0);
+                  final walletCashOut = _parseAmount(_accountInfoWithWallet!['cashOut'] ?? 0);
+                  final walletBalance = _parseAmount(_accountInfoWithWallet!['totalBalance'] ?? 0);
+                  
+                  _cashIn = walletCashIn;
+                  _cashOut = walletCashOut;
+                  _balance = walletBalance;
+                  _userCashIn = walletCashIn;
+                  _userCashOut = walletCashOut;
+                  _userBalance = walletBalance;
+                  
+                  debugPrint('📊 [ACCOUNT REPORTS] ✅ Updated summary cards with payment mode wallet values (IMMEDIATELY):');
+                  debugPrint('   Cash In: $walletCashIn');
+                  debugPrint('   Cash Out: $walletCashOut');
+                  debugPrint('   Balance: $walletBalance');
+                }
+              });
+            } else {
+              // Clear if "All Accounts" is selected (account is null)
+              // Only update values if they're significantly different to prevent flickering
+              setState(() {
+                _accountInfoWithWallet = null;
+                debugPrint('📊 [ACCOUNT REPORTS] Cleared account wallet info (All Accounts selected - account is null)');
+                
+                // Immediately update values to "All Accounts" aggregated values to prevent showing wrong values
+                // This prevents flickering when switching from specific account to "All Accounts"
+                if (_allAccountsWalletInfo != null) {
+                  final allCashIn = _parseAmount(_allAccountsWalletInfo!['cashIn'] ?? 0);
+                  final allCashOut = _parseAmount(_allAccountsWalletInfo!['cashOut'] ?? 0);
+                  final allBalance = _parseAmount(_allAccountsWalletInfo!['totalBalance'] ?? 0);
+                  
+                  // Only update if values are significantly different (tolerance 1.0) to prevent flickering
+                  final double tolerance = 1.0;
+                  final bool needsUpdate = 
+                      (_cashIn - allCashIn).abs() > tolerance ||
+                      (_cashOut - allCashOut).abs() > tolerance ||
+                      (_balance - allBalance).abs() > tolerance ||
+                      (_cashIn == 0.0 && _cashOut == 0.0 && _balance == 0.0);
+                  
+                  if (needsUpdate) {
+                    _cashIn = allCashIn;
+                    _cashOut = allCashOut;
+                    _balance = allBalance;
+                    _userCashIn = allCashIn;
+                    _userCashOut = allCashOut;
+                    _userBalance = allBalance;
+                    debugPrint('📊 [ACCOUNT REPORTS] Immediately updated to All Accounts values: CashIn=$allCashIn, CashOut=$allCashOut, Balance=$allBalance');
+                  } else {
+                    debugPrint('📊 [ACCOUNT REPORTS] Skipping immediate update - values are already correct (within tolerance)');
+                  }
+                } else {
+                  // If _allAccountsWalletInfo is not available yet, only reset if current values are not zero
+                  // This prevents unnecessary updates if values are already 0
+                  if (_cashIn != 0.0 || _cashOut != 0.0 || _balance != 0.0) {
+                    _cashIn = 0.0;
+                    _cashOut = 0.0;
+                    _balance = 0.0;
+                    _userCashIn = 0.0;
+                    _userCashOut = 0.0;
+                    _userBalance = 0.0;
+                    debugPrint('📊 [ACCOUNT REPORTS] Reset values to 0 (All Accounts wallet info not available yet)');
+                  } else {
+                    debugPrint('📊 [ACCOUNT REPORTS] Values already 0, skipping reset');
+                  }
+                }
+              });
+            }
+            
             // Transform wallet report response to match expected format
             final summary = walletReportResult['summary'] ?? <String, dynamic>{};
             final data = walletReportResult['data'] ?? <Map<String, dynamic>>[];
@@ -3483,30 +3575,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 reportLoaded = false;
               }
               
-              // Store account info with wallet details for Account Reports
-              if (walletReportResult['account'] != null) {
-                final accountData = walletReportResult['account'];
-                setState(() {
-                  _accountInfoWithWallet = accountData is Map<String, dynamic>
-                      ? Map<String, dynamic>.from(accountData)
-                      : (accountData is Map
-                          ? Map<String, dynamic>.from(accountData as Map)
-                          : null);
-                  if (_accountInfoWithWallet != null) {
-                    debugPrint('📊 [ACCOUNT REPORTS] Stored account wallet info from walletReportResult');
-                    debugPrint('   Account: ${_accountInfoWithWallet!['modeName']}');
-                    debugPrint('   Cash In: ${_accountInfoWithWallet!['cashIn']}');
-                    debugPrint('   Cash Out: ${_accountInfoWithWallet!['cashOut']}');
-                    debugPrint('   Total Balance: ${_accountInfoWithWallet!['totalBalance']}');
-                  }
-                });
-              } else {
-                // Clear if "All Accounts" is selected
-                setState(() {
-                  _accountInfoWithWallet = null;
-                  debugPrint('📊 [ACCOUNT REPORTS] Cleared account wallet info (All Accounts selected)');
-                });
-              }
+              // Account info already stored above (before data processing)
+              // No need to clear or store again here - already handled above
             }
           } else {
             allWalletReportResult = {
@@ -3904,6 +3974,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               debugPrint('   Cash In: ${accountMap['cashIn']}');
               debugPrint('   Cash Out: ${accountMap['cashOut']}');
               debugPrint('   Total Balance: ${accountMap['totalBalance']}');
+              
+              // Update summary cards with payment mode wallet values
+              final walletCashIn = _parseAmount(accountMap['cashIn'] ?? 0);
+              final walletCashOut = _parseAmount(accountMap['cashOut'] ?? 0);
+              final walletBalance = _parseAmount(accountMap['totalBalance'] ?? 0);
+              
+              _cashIn = walletCashIn;
+              _cashOut = walletCashOut;
+              _balance = walletBalance;
+              _userCashIn = walletCashIn;
+              _userCashOut = walletCashOut;
+              _userBalance = walletBalance;
+              
+              debugPrint('📊 [ACCOUNT REPORTS] Updated summary cards with payment mode wallet values:');
+              debugPrint('   Cash In: $walletCashIn');
+              debugPrint('   Cash Out: $walletCashOut');
+              debugPrint('   Balance: $walletBalance');
             });
           }
         } else if (_selectedItem == NavItem.accountReports) {
@@ -3911,6 +3998,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           setState(() {
             _accountInfoWithWallet = null;
             debugPrint('📊 [ACCOUNT REPORTS] Cleared account wallet info (All Accounts selected)');
+            
+            // Don't update values here - let _applyFilters() handle it to prevent flickering
+            // Values will be updated by _applyFilters() when it's called after data loads
           });
         }
 
@@ -4330,36 +4420,156 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               // Store the summary values temporarily - they'll be set in setState after detailed data is loaded
               // For Account Reports: Set API summary totals now so they're available when detailed data loads
               if (isAccountReports) {
+                // For Account Reports: Use wallet values if available, otherwise use API summary
+                // Wallet values take priority over API summary (which calculates from transactions)
+                final bool hasSpecificAccountWallet = _selectedAccountFilterId != null && _selectedAccountFilterId!.isNotEmpty && _accountInfoWithWallet != null;
+                final bool hasAllAccountsWallet = (_selectedAccountFilterId == null || _selectedAccountFilterId!.isEmpty) && _allAccountsWalletInfo != null;
+                
+                if (hasSpecificAccountWallet) {
+                  // Use specific account wallet values
+                  final accountCashIn = _parseAmount(_accountInfoWithWallet!['cashIn'] ?? 0);
+                  final accountCashOut = _parseAmount(_accountInfoWithWallet!['cashOut'] ?? 0);
+                  final accountBalance = _parseAmount(_accountInfoWithWallet!['totalBalance'] ?? 0);
+                  
+                  setState(() {
+                    _cashIn = accountCashIn;
+                    _cashOut = accountCashOut;
+                    _balance = accountBalance;
+                    _userCashIn = accountCashIn;
+                    _userCashOut = accountCashOut;
+                    _userBalance = accountBalance;
+                  });
+                  debugPrint('📊 [ACCOUNT REPORTS] Using specific account wallet values: CashIn=$accountCashIn, CashOut=$accountCashOut, Balance=$accountBalance');
+                } else if (hasAllAccountsWallet) {
+                  // Use aggregated All Accounts wallet values
+                  // BUT: Only set values without setState to prevent flickering
+                  // _applyFilters() will handle the final update with setState
+                  final allCashIn = _parseAmount(_allAccountsWalletInfo!['cashIn'] ?? 0);
+                  final allCashOut = _parseAmount(_allAccountsWalletInfo!['cashOut'] ?? 0);
+                  final allBalance = _parseAmount(_allAccountsWalletInfo!['totalBalance'] ?? 0);
+                  
+                  // Set values without setState - _applyFilters() will update with setState later
+                  _cashIn = allCashIn;
+                  _cashOut = allCashOut;
+                  _balance = allBalance;
+                  _userCashIn = allCashIn;
+                  _userCashOut = allCashOut;
+                  _userBalance = allBalance;
+                  
+                  debugPrint('📊 [ACCOUNT REPORTS] Set All Accounts aggregated wallet values (will be finalized by _applyFilters): CashIn=$allCashIn, CashOut=$allCashOut, Balance=$allBalance');
+                } else {
+                  // Fallback to API summary if no wallet values available
                 setState(() {
                   _cashIn = finalCashIn;
                   _cashOut = finalCashOut;
                   _balance = finalBalance;
-                  // Sync to UI display variables
-                  _userCashIn = finalCashIn;
-                  _userCashOut = finalCashOut;
-                  _userBalance = finalBalance;
+                    _userCashIn = finalCashIn;
+                    _userCashOut = finalCashOut;
+                    _userBalance = finalBalance;
                 });
-                debugPrint('📊 [ACCOUNT REPORTS] Set API summary totals: CashIn=$finalCashIn, CashOut=$finalCashOut, Balance=$finalBalance');
-                debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
+                  debugPrint('📊 [ACCOUNT REPORTS] Using API summary totals (no wallet values): CashIn=$finalCashIn, CashOut=$finalCashOut, Balance=$finalBalance');
+                }
               }
-              // Don't call full setState here - wait for detailed data to be loaded to prevent flickering
-              print('📊 [ALL WALLET REPORTS] Stored summary values, will update UI after detailed data is loaded');
-              // Skip full setState and _applyFilters here - will be called after detailed data is loaded
-            } else {
-              // Not fetching detailed data, proceed with normal setState
+              // Set initial data from API response even if we're fetching detailed data later
+              // This ensures table shows data immediately while detailed data loads in background
               setState(() {
+                // Debug: Check paymentMode in first few items before assigning
+                if (processedReportData.isNotEmpty) {
+                  debugPrint('🔍 [PAYMENT MODE CHECK] Checking first 3 items before assigning to _allData:');
+                  for (int i = 0; i < processedReportData.length && i < 3; i++) {
+                    final item = processedReportData[i];
+                    final type = item['type']?.toString() ?? '';
+                    debugPrint('   Item $i: type=$type');
+                    if (item['paymentMode'] != null) {
+                      debugPrint('     ✅ paymentMode exists: ${item['paymentMode']}');
+                      if (item['paymentMode'] is Map) {
+                        final pm = item['paymentMode'] as Map;
+                        debugPrint('       modeName: ${pm['modeName']}');
+                      }
+                    } else {
+                      debugPrint('     ⚠️  paymentMode is null');
+                      debugPrint('     paymentModeId: ${item['paymentModeId']}');
+                    }
+                  }
+                }
                 _allData = processedReportData;
                 _filteredData = processedReportData;
                 _wallet = convertedWallet;
+                debugPrint('📊 [ACCOUNT REPORTS] Set initial table data from API response: ${processedReportData.length} items');
+                debugPrint('   Detailed data will be loaded separately and will update table when ready');
+              });
+              print('📊 [ALL WALLET REPORTS] Set initial data, detailed data will update table when loaded');
+            } else {
+              // Not fetching detailed data, proceed with normal setState
+              setState(() {
+                // Debug: Check paymentMode in first few items before assigning
+                if (processedReportData.isNotEmpty) {
+                  debugPrint('🔍 [PAYMENT MODE CHECK] Checking first 3 items before assigning to _allData:');
+                  for (int i = 0; i < processedReportData.length && i < 3; i++) {
+                    final item = processedReportData[i];
+                    final type = item['type']?.toString() ?? '';
+                    debugPrint('   Item $i: type=$type');
+                    if (item['paymentMode'] != null) {
+                      debugPrint('     ✅ paymentMode exists: ${item['paymentMode']}');
+                      if (item['paymentMode'] is Map) {
+                        final pm = item['paymentMode'] as Map;
+                        debugPrint('       modeName: ${pm['modeName']}');
+                      }
+                    } else {
+                      debugPrint('     ⚠️  paymentMode is null');
+                      debugPrint('     paymentModeId: ${item['paymentModeId']}');
+                    }
+                  }
+                }
+                _allData = processedReportData;
+                _filteredData = processedReportData;
+                _wallet = convertedWallet;
+                // For Account Reports: Use wallet values if available, otherwise use API summary
+                // Wallet values take priority over API summary (which calculates from transactions)
+                if (isAccountReports) {
+                  final bool hasSpecificAccountWallet = _selectedAccountFilterId != null && _selectedAccountFilterId!.isNotEmpty && _accountInfoWithWallet != null;
+                  final bool hasAllAccountsWallet = (_selectedAccountFilterId == null || _selectedAccountFilterId!.isEmpty) && _allAccountsWalletInfo != null;
+                  
+                  if (hasSpecificAccountWallet) {
+                    // Use specific account wallet values
+                    final accountCashIn = _parseAmount(_accountInfoWithWallet!['cashIn'] ?? 0);
+                    final accountCashOut = _parseAmount(_accountInfoWithWallet!['cashOut'] ?? 0);
+                    final accountBalance = _parseAmount(_accountInfoWithWallet!['totalBalance'] ?? 0);
+                    
+                    _cashIn = accountCashIn;
+                    _cashOut = accountCashOut;
+                    _balance = accountBalance;
+                    _userCashIn = accountCashIn;
+                    _userCashOut = accountCashOut;
+                    _userBalance = accountBalance;
+                    debugPrint('📊 [ACCOUNT REPORTS] Using specific account wallet values in normal setState: CashIn=$accountCashIn, CashOut=$accountCashOut, Balance=$accountBalance');
+                  } else if (hasAllAccountsWallet) {
+                    // Use aggregated All Accounts wallet values
+                    final allCashIn = _parseAmount(_allAccountsWalletInfo!['cashIn'] ?? 0);
+                    final allCashOut = _parseAmount(_allAccountsWalletInfo!['cashOut'] ?? 0);
+                    final allBalance = _parseAmount(_allAccountsWalletInfo!['totalBalance'] ?? 0);
+                    
+                    _cashIn = allCashIn;
+                    _cashOut = allCashOut;
+                    _balance = allBalance;
+                    _userCashIn = allCashIn;
+                    _userCashOut = allCashOut;
+                    _userBalance = allBalance;
+                    debugPrint('📊 [ACCOUNT REPORTS] Using All Accounts aggregated wallet values in normal setState: CashIn=$allCashIn, CashOut=$allCashOut, Balance=$allBalance');
+                  } else {
+                    // Fallback to API summary if no wallet values available
                 _cashIn = finalCashIn;
                 _cashOut = finalCashOut;
                 _balance = finalBalance;
-                // For Account Reports: Sync to UI display variables
-                if (isAccountReports) {
-                  _userCashIn = finalCashIn;
-                  _userCashOut = finalCashOut;
-                  _userBalance = finalBalance;
-                  debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables in normal setState: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
+                    _userCashIn = finalCashIn;
+                    _userCashOut = finalCashOut;
+                    _userBalance = finalBalance;
+                    debugPrint('📊 [ACCOUNT REPORTS] Using API summary in normal setState (no wallet values): CashIn=$finalCashIn, CashOut=$finalCashOut, Balance=$finalBalance');
+                  }
+                } else {
+                  _cashIn = finalCashIn;
+                  _cashOut = finalCashOut;
+                  _balance = finalBalance;
                 }
               });
               
@@ -5261,20 +5471,35 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               _userBalance = _balance;
               debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
             } else {
-              // No account filter: Use API summary totals (all accounts)
+              // No account filter: Use aggregated payment mode wallet values (All Accounts)
               debugPrint('═══════════════════════════════════════════════════════════');
-              debugPrint('📊 [ACCOUNT REPORTS] No account filter - using API summary (all accounts)');
+              debugPrint('📊 [ACCOUNT REPORTS] No account filter - using aggregated payment mode wallet values (All Accounts)');
+              
+              // Use _allAccountsWalletInfo if available (aggregated from all active payment modes)
+              // BUT: Don't update values here - let _applyFilters() handle it to prevent flickering
+              if (_allAccountsWalletInfo != null) {
+                final allCashIn = _parseAmount(_allAccountsWalletInfo!['cashIn'] ?? 0);
+                final allCashOut = _parseAmount(_allAccountsWalletInfo!['cashOut'] ?? 0);
+                final allBalance = _parseAmount(_allAccountsWalletInfo!['totalBalance'] ?? 0);
+                
+                debugPrint('   Aggregated Cash In: $allCashIn');
+                debugPrint('   Aggregated Cash Out: $allCashOut');
+                debugPrint('   Aggregated Balance: $allBalance');
+                debugPrint('═══════════════════════════════════════════════════════════');
+                debugPrint('📊 [ACCOUNT REPORTS] All Accounts wallet info available (will be updated by _applyFilters)');
+              } else {
+                // Fallback to API summary if _allAccountsWalletInfo is not available
+                debugPrint('   ⚠️ _allAccountsWalletInfo is null, using API summary as fallback');
               debugPrint('   API Cash In: $_cashIn');
               debugPrint('   API Cash Out: $_cashOut');
               debugPrint('   API Balance: $_balance');
               debugPrint('═══════════════════════════════════════════════════════════');
               
-              // Keep API summary values (already set from reportResult)
-              // Don't overwrite with calculated values
-              // Sync to UI display variables
-              _userCashIn = _cashIn;
-              _userCashOut = _cashOut;
-              _userBalance = _balance;
+                // Sync to UI display variables
+                _userCashIn = _cashIn;
+                _userCashOut = _cashOut;
+                _userBalance = _balance;
+              }
               debugPrint('📊 [ACCOUNT REPORTS] Synced to UI variables: _userCashIn=$_userCashIn, _userCashOut=$_userCashOut, _userBalance=$_userBalance');
             }
           } else {
@@ -5959,6 +6184,15 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           debugPrint('Loaded ${_paymentModes.length} payment modes');
           for (var mode in _paymentModes) {
             debugPrint('Payment mode: ${mode['modeName']}');
+          }
+          
+          // Calculate aggregated totals for "All Accounts" if on Account Reports screen
+          // Note: Values will be updated by _applyFilters() or data load logic
+          // This prevents flickering from multiple setState calls
+          if (_selectedItem == NavItem.accountReports) {
+            _calculateAllAccountsWalletInfo();
+            // Values will be updated by existing code paths (data load, _applyFilters)
+            // No need to trigger update here - prevents flickering
           }
         } else {
           debugPrint('Failed to load payment modes: ${result['message']}');
@@ -7257,6 +7491,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         debugPrint('═══════════════════════════════════════════════════════════');
       }
 
+      // For Account Reports: Don't filter if _allData is empty (data not loaded yet)
+      // This prevents data from disappearing when _applyFilters() is called before data loads
+      if (_selectedItem == NavItem.accountReports && _allData.isEmpty) {
+        debugPrint('⚠️  [ACCOUNT REPORTS] _applyFilters() called but _allData is empty - skipping filter to prevent data loss');
+        return;
+      }
+
       List<dynamic> filtered = List.from(_allData);
 
       // Force filter to expenses only if in expense report mode
@@ -7438,12 +7679,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         debugPrint('═══════════════════════════════════════════════════════════');
         
         // Update totals in setState
-        if (mounted && (_cashIn != accountCashIn || _cashOut != accountCashOut || _balance != accountBalance)) {
+        // BUT: For Account Reports, use wallet values if available (they take priority over calculated values)
+        final bool hasWalletValues = _accountInfoWithWallet != null;
+        
+        if (hasWalletValues) {
+          debugPrint('📊 [ACCOUNT REPORTS] Skipping recalculation from filtered data - using payment mode wallet values instead');
+          debugPrint('   Wallet Cash In: ${_accountInfoWithWallet!['cashIn']}');
+          debugPrint('   Wallet Cash Out: ${_accountInfoWithWallet!['cashOut']}');
+          debugPrint('   Wallet Balance: ${_accountInfoWithWallet!['totalBalance']}');
+        } else if (mounted && (_cashIn != accountCashIn || _cashOut != accountCashOut || _balance != accountBalance)) {
           debugPrint('🔄 [ACCOUNT REPORTS] Calling setState to update values from filtered data...');
           setState(() {
             _cashIn = accountCashIn;
             _cashOut = accountCashOut;
             _balance = accountBalance;
+            _userCashIn = accountCashIn;
+            _userCashOut = accountCashOut;
+            _userBalance = accountBalance;
           });
           debugPrint('✅ [ACCOUNT REPORTS] setState completed - values updated from filtered data');
           debugPrint('   After setState - _cashIn: $_cashIn');
@@ -7457,7 +7709,50 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           }
         }
         } else {
-          // No API values and no filtered data - ensure values are 0
+          // No API values and no filtered data
+          // BUT: For Account Reports, check if we have wallet values first
+          final bool hasWalletValues = _accountInfoWithWallet != null;
+          
+          debugPrint('═══════════════════════════════════════════════════════════');
+          debugPrint('📊 [ACCOUNT REPORTS] No filtered data check:');
+          debugPrint('   Account ID: $_selectedAccountFilterId');
+          debugPrint('   hasWalletValues: $hasWalletValues');
+          debugPrint('   _accountInfoWithWallet: ${_accountInfoWithWallet != null ? "EXISTS" : "NULL"}');
+          if (_accountInfoWithWallet != null) {
+            debugPrint('   Wallet Cash In: ${_accountInfoWithWallet!['cashIn']}');
+            debugPrint('   Wallet Cash Out: ${_accountInfoWithWallet!['cashOut']}');
+            debugPrint('   Wallet Balance: ${_accountInfoWithWallet!['totalBalance']}');
+          }
+          debugPrint('═══════════════════════════════════════════════════════════');
+          
+          if (hasWalletValues) {
+            debugPrint('📊 [ACCOUNT REPORTS] No filtered data, but using payment mode wallet values');
+            debugPrint('   Wallet Cash In: ${_accountInfoWithWallet!['cashIn']}');
+            debugPrint('   Wallet Cash Out: ${_accountInfoWithWallet!['cashOut']}');
+            debugPrint('   Wallet Balance: ${_accountInfoWithWallet!['totalBalance']}');
+            
+            // Update summary cards with wallet values
+            final walletCashIn = _parseAmount(_accountInfoWithWallet!['cashIn'] ?? 0);
+            final walletCashOut = _parseAmount(_accountInfoWithWallet!['cashOut'] ?? 0);
+            final walletBalance = _parseAmount(_accountInfoWithWallet!['totalBalance'] ?? 0);
+            
+            if (mounted && (_cashIn != walletCashIn || _cashOut != walletCashOut || _balance != walletBalance)) {
+              debugPrint('🔄 [ACCOUNT REPORTS] Calling setState to update with wallet values...');
+              setState(() {
+                _cashIn = walletCashIn;
+                _cashOut = walletCashOut;
+                _balance = walletBalance;
+                _userCashIn = walletCashIn;
+                _userCashOut = walletCashOut;
+                _userBalance = walletBalance;
+              });
+              debugPrint('✅ [ACCOUNT REPORTS] setState completed - Updated with wallet values');
+              debugPrint('   After setState - _cashIn: $_cashIn');
+              debugPrint('   After setState - _cashOut: $_cashOut');
+              debugPrint('   After setState - _balance: $_balance');
+            }
+          } else {
+            // No wallet values either - ensure values are 0
           // This handles the case where API returned 0, 0, 0 (like Company Upi)
           debugPrint('═══════════════════════════════════════════════════════════');
           debugPrint('📊 [ACCOUNT REPORTS] No data - ensuring totals are 0:');
@@ -7477,6 +7772,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               _cashIn = 0.0;
               _cashOut = 0.0;
               _balance = 0.0;
+                _userCashIn = 0.0;
+                _userCashOut = 0.0;
+                _userBalance = 0.0;
             });
             debugPrint('✅ [ACCOUNT REPORTS] setState completed - Updated totals to 0, 0, 0');
             debugPrint('   After setState - _cashIn: $_cashIn');
@@ -7484,6 +7782,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             debugPrint('   After setState - _balance: $_balance');
           } else {
             debugPrint('⚠️  [ACCOUNT REPORTS] Widget not mounted, cannot update values');
+            }
           }
         }
       } else if (_selectedItem == NavItem.accountReports && (_selectedAccountFilterId == null || _selectedAccountFilterId!.isEmpty)) {
@@ -7876,6 +8175,165 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           _expandedRows.clear();
           _pendingApprovalsMode = pendingMode;
         });
+      }
+
+      // For Account Reports: Recalculate Cash In/Out/Balance from filtered data if any filters are active
+      // (date, status, type, mode filters - not just account filter)
+      if (_selectedItem == NavItem.accountReports) {
+        final filterProvider = _filterProvider;
+        
+        // Check if "All Accounts" is selected (no account filter)
+        final bool isAllAccounts = _selectedAccountFilterId == null || _selectedAccountFilterId!.isEmpty;
+        
+        // Check if any filters are active (other than account filter which is already handled)
+        final bool hasDateFilter = filterProvider.startDate != null || filterProvider.endDate != null;
+        final bool hasTypeFilter = filterProvider.selectedType != null;
+        final bool hasStatusFilter = filterProvider.selectedStatus != null || _selectedStatusSet.isNotEmpty;
+        final bool hasModeFilter = filterProvider.selectedMode != null;
+        final bool hasUserFilter = filterProvider.selectedUserIds.isNotEmpty || _selectedUserLabelMatchers.isNotEmpty;
+        final bool hasExpenseTypeFilter = _selectedExpenseTypeCategory != null;
+        final bool hasAnyFilter = hasDateFilter || hasTypeFilter || hasStatusFilter || hasModeFilter || hasUserFilter || hasExpenseTypeFilter;
+        
+        // For "All Accounts" with no filters: Use aggregated wallet values (_allAccountsWalletInfo)
+        // Only update if values are significantly different to prevent flickering from multiple updates
+        if (isAllAccounts && !hasAnyFilter) {
+          if (_allAccountsWalletInfo != null) {
+            final allCashIn = _parseAmount(_allAccountsWalletInfo!['cashIn'] ?? 0);
+            final allCashOut = _parseAmount(_allAccountsWalletInfo!['cashOut'] ?? 0);
+            final allBalance = _parseAmount(_allAccountsWalletInfo!['totalBalance'] ?? 0);
+            
+            debugPrint('═══════════════════════════════════════════════════════════');
+            debugPrint('📊 [ACCOUNT REPORTS] All Accounts - No filters - Checking aggregated wallet values:');
+            debugPrint('   Wallet Cash In: $allCashIn');
+            debugPrint('   Wallet Cash Out: $allCashOut');
+            debugPrint('   Wallet Balance: $allBalance');
+            debugPrint('   Current Cash In: $_cashIn');
+            debugPrint('   Current Cash Out: $_cashOut');
+            debugPrint('   Current Balance: $_balance');
+            debugPrint('═══════════════════════════════════════════════════════════');
+            
+            // Use a reasonable tolerance (1.0) to prevent flickering from multiple setState calls
+            // This allows updates when switching accounts but prevents flickering from minor differences
+            final double tolerance = 1.0;
+            final bool valuesAreSignificantlyDifferent = 
+                (_cashIn - allCashIn).abs() > tolerance ||
+                (_cashOut - allCashOut).abs() > tolerance ||
+                (_balance - allBalance).abs() > tolerance;
+            
+            // Also check if values are zero (need to update)
+            final bool valuesAreZero = _cashIn == 0.0 && _cashOut == 0.0 && _balance == 0.0;
+            
+            if (mounted && (valuesAreZero || valuesAreSignificantlyDifferent)) {
+              debugPrint('📊 [ACCOUNT REPORTS] Updating values from aggregated wallet (${valuesAreZero ? "values are zero" : "values are significantly different"})');
+              setState(() {
+                _cashIn = allCashIn;
+                _cashOut = allCashOut;
+                _balance = allBalance;
+                _userCashIn = allCashIn;
+                _userCashOut = allCashOut;
+                _userBalance = allBalance;
+              });
+              debugPrint('✅ [ACCOUNT REPORTS] Updated Cash In/Out/Balance with All Accounts aggregated wallet values');
+            } else {
+              debugPrint('📊 [ACCOUNT REPORTS] Skipping update - values are already correct (within tolerance)');
+            }
+          } else {
+            debugPrint('📊 [ACCOUNT REPORTS] All Accounts - No filters - _allAccountsWalletInfo is null, keeping current values');
+          }
+        } else if (hasAnyFilter) {
+          // Filters are active - recalculate from filtered data
+          debugPrint('═══════════════════════════════════════════════════════════');
+          debugPrint('📊 [ACCOUNT REPORTS] Filters active - recalculating from filtered data:');
+          debugPrint('   Date filter: $hasDateFilter');
+          debugPrint('   Type filter: $hasTypeFilter');
+          debugPrint('   Status filter: $hasStatusFilter');
+          debugPrint('   Mode filter: $hasModeFilter');
+          debugPrint('   User filter: $hasUserFilter');
+          debugPrint('   Expense type filter: $hasExpenseTypeFilter');
+          debugPrint('   Filtered items count: ${filtered.length}');
+          
+          double recalculatedCashIn = 0.0;
+          double recalculatedCashOut = 0.0;
+          
+          // Get current user ID to check if user is expense owner or approver
+          String? currentUserId;
+          try {
+            currentUserId = await AuthService.getUserId();
+          } catch (e) {
+            debugPrint('⚠️  [ACCOUNT REPORTS] Could not get current user ID: $e');
+          }
+          
+          for (final item in filtered) {
+            final amount = _parseAmount(item['amount']);
+            final type = item['type']?.toString() ?? '';
+            
+            if (type == 'Expenses') {
+              if (_isItemApproved(item)) {
+                final expenseUserId = item['userId'] is Map
+                    ? (item['userId']?['_id'] ?? item['userId']?['id'] ?? '').toString()
+                    : (item['userId'] ?? '').toString();
+                
+                final approvedByValue = item['approvedBy'];
+                String? approverId;
+                if (approvedByValue != null) {
+                  if (approvedByValue is Map) {
+                    approverId = (approvedByValue['_id'] ?? approvedByValue['id'] ?? '').toString();
+                  } else if (approvedByValue is String) {
+                    approverId = approvedByValue;
+                  } else {
+                    approverId = approvedByValue.toString();
+                  }
+                }
+                
+                if (currentUserId != null) {
+                  if (expenseUserId == currentUserId) {
+                    recalculatedCashIn += amount;
+                  } else if (approverId != null && approverId == currentUserId) {
+                    recalculatedCashOut += amount;
+                  }
+                } else {
+                  recalculatedCashIn += amount;
+                }
+              }
+            } else if (type == 'Collections') {
+              if (_isItemApproved(item)) {
+                recalculatedCashIn += amount;
+              }
+            } else if (type == 'Transactions') {
+              if (_isItemApproved(item)) {
+                recalculatedCashIn += amount;
+              }
+            } else if (type == 'Add Amount' || type.toLowerCase() == 'add amount') {
+              recalculatedCashIn += amount;
+            } else if (type == 'Withdraw' || type.toLowerCase() == 'withdraw') {
+              recalculatedCashOut += amount;
+            }
+          }
+          
+          final recalculatedBalance = recalculatedCashIn - recalculatedCashOut;
+          
+          debugPrint('   Recalculated Cash In: $recalculatedCashIn');
+          debugPrint('   Recalculated Cash Out: $recalculatedCashOut');
+          debugPrint('   Recalculated Balance: $recalculatedBalance');
+          debugPrint('   Current values: Cash In=$_cashIn, Cash Out=$_cashOut, Balance=$_balance');
+          debugPrint('═══════════════════════════════════════════════════════════');
+          
+          // Update values if they changed
+          if (mounted && (_cashIn != recalculatedCashIn || _cashOut != recalculatedCashOut || _balance != recalculatedBalance)) {
+            setState(() {
+              _cashIn = recalculatedCashIn;
+              _cashOut = recalculatedCashOut;
+              _balance = recalculatedBalance;
+              _userCashIn = recalculatedCashIn;
+              _userCashOut = recalculatedCashOut;
+              _userBalance = recalculatedBalance;
+            });
+            debugPrint('✅ [ACCOUNT REPORTS] Updated Cash In/Out/Balance from filtered data');
+          }
+        } else {
+          // No filters active - use API/wallet values (already set earlier in the function)
+          debugPrint('📊 [ACCOUNT REPORTS] No filters active - using API/wallet values (already set)');
+        }
       }
 
       // For Self Wallet and All Wallet Report: Skip financial summary calculation (API provides correct values)
@@ -8656,10 +9114,15 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         _isInitializingAccountReports = false; // Reset initialization flag
         _accountReportsCallbackScheduled = false; // Reset callback scheduled flag
       });
-      // Clear status filter to show ALL expenses including Flagged by default
-      filterProvider.setStatus(null);
+      // Set default filters for Account Reports:
+      // Type: "Expenses" (default)
+      // Status: "All" (null = show all statuses including Flagged)
+      filterProvider.removeListener(_onFilterChanged);
+      filterProvider.setType('Expenses'); // Default to Expenses
+      filterProvider.setStatus(null); // Default to All statuses
       _selectedStatusSet.clear();
-      debugPrint('📊 [ACCOUNT REPORTS] Navigating to Account Reports - cleared filter (showing all accounts and all statuses including Flagged)');
+      filterProvider.addListener(_onFilterChanged);
+      debugPrint('📊 [ACCOUNT REPORTS] Navigating to Account Reports - set default filters: Type=Expenses, Status=All, Account=All Accounts');
     }
     
     // If navigating AWAY from Account Reports, reset initialization flags
@@ -17302,24 +17765,93 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     }
   }
 
+  // Calculate aggregated wallet info from all active payment modes
+  void _calculateAllAccountsWalletInfo() {
+    if (_paymentModes.isEmpty) {
+      _allAccountsWalletInfo = null;
+      return;
+    }
+    
+    // Filter only active payment modes
+    final activeModes = _paymentModes.where((mode) => mode['isActive'] != false).toList();
+    
+    if (activeModes.isEmpty) {
+      _allAccountsWalletInfo = null;
+      return;
+    }
+    
+    double totalCashIn = 0;
+    double totalCashOut = 0;
+    double totalCashBalance = 0;
+    double totalUpiBalance = 0;
+    double totalBankBalance = 0;
+    
+    for (var mode in activeModes) {
+      totalCashIn += _parseAmount(mode['cashIn'] ?? 0);
+      totalCashOut += _parseAmount(mode['cashOut'] ?? 0);
+      totalCashBalance += _parseAmount(mode['cashBalance'] ?? 0);
+      totalUpiBalance += _parseAmount(mode['upiBalance'] ?? 0);
+      totalBankBalance += _parseAmount(mode['bankBalance'] ?? 0);
+    }
+    
+    double totalBalance = totalCashBalance + totalUpiBalance + totalBankBalance;
+    
+    // Only calculate and store _allAccountsWalletInfo
+    // DO NOT update summary card values here - let other code paths (like _applyFilters) handle it
+    // This prevents flickering from multiple setState calls
+    _allAccountsWalletInfo = {
+      'modeName': 'All Accounts',
+      'description': 'All Active Payment Modes',
+      'cashIn': totalCashIn,
+      'cashOut': totalCashOut,
+      'totalBalance': totalBalance,
+      'cashBalance': totalCashBalance,
+      'upiBalance': totalUpiBalance,
+      'bankBalance': totalBankBalance,
+    };
+    
+    debugPrint('📊 [ACCOUNT REPORTS] Calculated All Accounts wallet info:');
+    debugPrint('   Active Payment Modes: ${activeModes.length}');
+    debugPrint('   Total Cash In: $totalCashIn');
+    debugPrint('   Total Cash Out: $totalCashOut');
+    debugPrint('   Total Balance: $totalBalance');
+    debugPrint('   Note: Summary card values will be updated by _applyFilters or data load logic');
+  }
+
   // Build account wallet details card (ONLY for Account Reports)
   Widget _buildAccountWalletDetailsCard(bool isMobile, bool isTablet) {
-    // ONLY show for Account Reports when specific account is selected
+    // ONLY show for Account Reports
     final bool isAccountReports = _selectedItem == NavItem.accountReports;
-    if (!isAccountReports || 
-        _accountInfoWithWallet == null || 
-        _selectedAccountFilterId == null || 
-        _selectedAccountFilterId!.isEmpty) {
+    if (!isAccountReports) {
       return const SizedBox.shrink();
     }
     
-    final accountName = _accountInfoWithWallet!['modeName'] ?? 'Unknown Account';
-    final cashIn = _parseAmount(_accountInfoWithWallet!['cashIn'] ?? 0);
-    final cashOut = _parseAmount(_accountInfoWithWallet!['cashOut'] ?? 0);
-    final totalBalance = _parseAmount(_accountInfoWithWallet!['totalBalance'] ?? 0);
-    final cashBalance = _parseAmount(_accountInfoWithWallet!['cashBalance'] ?? 0);
-    final upiBalance = _parseAmount(_accountInfoWithWallet!['upiBalance'] ?? 0);
-    final bankBalance = _parseAmount(_accountInfoWithWallet!['bankBalance'] ?? 0);
+    // Determine which wallet info to use
+    Map<String, dynamic>? walletInfo;
+    String accountName;
+    
+    if (_selectedAccountFilterId != null && _selectedAccountFilterId!.isNotEmpty) {
+      // Specific account selected - use account wallet info
+      walletInfo = _accountInfoWithWallet;
+      accountName = walletInfo?['modeName'] ?? 'Unknown Account';
+    } else {
+      // "All Accounts" selected - use aggregated totals from all active payment modes
+      walletInfo = _allAccountsWalletInfo;
+      accountName = 'All Accounts';
+    }
+    
+    // If no wallet info available, don't show card
+    if (walletInfo == null) {
+      return const SizedBox.shrink();
+    }
+    
+    // Extract values from walletInfo
+    final cashIn = _parseAmount(walletInfo['cashIn'] ?? 0);
+    final cashOut = _parseAmount(walletInfo['cashOut'] ?? 0);
+    final totalBalance = _parseAmount(walletInfo['totalBalance'] ?? 0);
+    final cashBalance = _parseAmount(walletInfo['cashBalance'] ?? 0);
+    final upiBalance = _parseAmount(walletInfo['upiBalance'] ?? 0);
+    final bankBalance = _parseAmount(walletInfo['bankBalance'] ?? 0);
     
     return Container(
       margin: EdgeInsets.only(
@@ -17349,21 +17881,37 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Account Name Header
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.account_balance, 
-                     color: AppTheme.primaryColor, 
-                     size: isMobile ? 20 : 24),
-                SizedBox(width: isMobile ? 8 : 12),
-                Expanded(
-                  child: Text(
-                    'Account Wallet: $accountName',
-                    style: AppTheme.headingMedium.copyWith(
-                      fontSize: isMobile ? 16 : 18,
-                      fontWeight: FontWeight.w600,
+                Row(
+                  children: [
+                    Icon(Icons.account_balance, 
+                         color: AppTheme.primaryColor, 
+                         size: isMobile ? 20 : 24),
+                    SizedBox(width: isMobile ? 8 : 12),
+                    Expanded(
+                      child: Text(
+                        'Account Wallet: $accountName',
+                        style: AppTheme.headingMedium.copyWith(
+                          fontSize: isMobile ? 16 : 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_selectedAccountFilterId == null || _selectedAccountFilterId!.isEmpty) ...[
+                  SizedBox(height: isMobile ? 4 : 6),
+                  Text(
+                    '(All Active Payment Modes)',
+                    style: AppTheme.bodySmall.copyWith(
+                      fontSize: isMobile ? 11 : 12,
+                      color: AppTheme.textSecondary,
+                      fontStyle: FontStyle.italic,
                     ),
                   ),
-                ),
+                ],
               ],
             ),
             SizedBox(height: isMobile ? 16 : 20),
@@ -23272,6 +23820,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             
             setState(() {
               _selectedAccountFilterId = normalizedAccountId; // Store normalized value (null for "All Accounts")
+              
+              // Calculate aggregated totals when "All Accounts" is selected
+              if (normalizedAccountId == null || normalizedAccountId.isEmpty) {
+                _calculateAllAccountsWalletInfo();
+              }
               _accountReportsDataLoaded = false; // Reset flag
               _accountReportsCallbackScheduled = true; // Prevent post-frame callback from triggering
             });
@@ -27745,7 +28298,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   if (type == 'Expenses') {
                     to = _displayValue(item['category'] ?? item['expenseType'] ?? item['to']);
                   }
-                  final mode = _displayValue(item['mode']);
+                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") instead of just payment method type (Cash, UPI, Bank)
+                  final mode = _extractPaymentModeName(item) ?? _displayValue(item['mode']) ?? 'Cash';
                   final amount = _formatAmount(_parseAmount(item['amount']));
                   final status = _displayValue(item['status']);
                   final accountName = isAllAccounts 
@@ -27811,7 +28365,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   if (type == 'Expenses') {
                     to = _displayValue(item['category'] ?? item['expenseType'] ?? item['to']);
                   }
-                  final mode = _displayValue(item['mode']);
+                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") instead of just payment method type (Cash, UPI, Bank)
+                  final mode = _extractPaymentModeName(item) ?? _displayValue(item['mode']) ?? 'Cash';
                   final amount = _formatAmount(_parseAmount(item['amount']));
                   // Extract approvedBy name properly for expenses
                   String approvedBy = '-';
@@ -28430,7 +28985,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     Color color;
     IconData icon;
     
-    switch (mode.toUpperCase()) {
+    final modeUpper = mode.toUpperCase();
+    
+    // Check for exact matches first
+    switch (modeUpper) {
       case 'CASH':
         color = Colors.green;
         icon = Icons.money;
@@ -28444,8 +29002,21 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         icon = Icons.account_balance;
         break;
       default:
+        // Check if mode name contains payment method keywords (for payment mode names like "CASH ONE", "ONLINE UPI", etc.)
+        if (modeUpper.contains('CASH')) {
+          color = Colors.green;
+          icon = Icons.money;
+        } else if (modeUpper.contains('UPI')) {
+          color = Colors.purple;
+          icon = Icons.qr_code;
+        } else if (modeUpper.contains('BANK')) {
+          color = Colors.blue;
+          icon = Icons.account_balance;
+        } else {
+          // Default for payment mode names that don't match any pattern
         color = AppTheme.textSecondary;
         icon = Icons.payment;
+        }
     }
     
     return Container(

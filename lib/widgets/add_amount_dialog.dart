@@ -120,6 +120,7 @@ class _AddAmountDialogState extends State<AddAmountDialog> {
         amount: amount,
         notes: remark.isEmpty ? null : remark,
         userId: widget.userId,
+        paymentModeId: _selectedPaymentModeId,
       );
 
       if (mounted) {

@@ -313,6 +313,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
         amount: amount,
         mode: _selectedMode!,
         purpose: purpose.isEmpty ? null : purpose,
+        paymentModeId: _selectedPaymentModeId,
       );
 
       if (mounted) {
