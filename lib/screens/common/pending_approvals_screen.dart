@@ -1115,69 +1115,170 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
   }) {
     final isMobile = Responsive.isMobile(context);
     final effectiveValue = options.contains(value) ? value : _allFilterValue;
+    
     return SizedBox(
       width: width,
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
-          ),
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: isMobile ? 12 : 16,
-            vertical: isMobile ? 2 : 4,
-          ),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: effectiveValue,
-            isExpanded: true,
-            items: options
-                .map(
-                  (option) => DropdownMenuItem<String>(
-                    value: option,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            option,
-                            overflow: TextOverflow.ellipsis,
+      child: Builder(
+        builder: (builderContext) {
+          return InputDecorator(
+            decoration: InputDecoration(
+              labelText: label,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(isMobile ? 10 : 12),
+              ),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 12 : 16,
+                vertical: isMobile ? 2 : 4,
+              ),
+            ),
+            child: InkWell(
+              onTap: () {
+                final RenderBox? renderBox = builderContext.findRenderObject() as RenderBox?;
+                if (renderBox == null) return;
+                
+                final size = renderBox.size;
+                final offset = renderBox.localToGlobal(Offset.zero);
+                final menuHeight = (options.length * 48.0).clamp(0.0, 300.0);
+                
+                // Use the width parameter to ensure exact match with dropdown box
+                final menuWidth = width;
+                
+                // Always position menu directly below the dropdown (with small gap)
+                final menuTop = offset.dy + size.height + 4;
+                
+                final OverlayState? overlayState = Overlay.of(context);
+                if (overlayState == null) return;
+                
+                late OverlayEntry overlayEntry;
+                overlayEntry = OverlayEntry(
+                  builder: (context) => Stack(
+                    children: [
+                      // Backdrop to close menu when tapping outside
+                      Positioned.fill(
+                        child: GestureDetector(
+                          onTap: () => overlayEntry.remove(),
+                          behavior: HitTestBehavior.translucent,
+                          child: Container(
+                            color: Colors.transparent,
                           ),
                         ),
-                        if (highlightOptions != null &&
-                            highlightLabel != null &&
-                            option != _allFilterValue &&
-                            highlightOptions.contains(option)) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppTheme.secondaryColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
+                      ),
+                      // Menu content
+                      Positioned(
+                        left: offset.dx,
+                        top: menuTop,
+                        child: Material(
+                          color: Colors.white,
+                          child: Container(
+                            width: menuWidth,
+                            constraints: BoxConstraints(
+                              minWidth: menuWidth,
+                              maxWidth: menuWidth,
+                              maxHeight: menuHeight,
                             ),
-                            child: Text(
-                              highlightLabel,
-                              style: AppTheme.bodySmall.copyWith(
-                                fontSize: 11,
-                                letterSpacing: 0.3,
-                                color: AppTheme.secondaryColor,
-                                fontWeight: FontWeight.w600,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: ListView(
+                                shrinkWrap: true,
+                                padding: EdgeInsets.zero,
+                                children: options.map((option) {
+                                  final isHighlighted = highlightOptions != null &&
+                                      highlightLabel != null &&
+                                      option != _allFilterValue &&
+                                      highlightOptions.contains(option);
+                                  
+                                  return Material(
+                                    color: Colors.white,
+                                    child: InkWell(
+                                      onTap: () {
+                                        overlayEntry.remove();
+                                        onChanged(option);
+                                      },
+                                      child: Container(
+                                        width: menuWidth,
+                                        constraints: BoxConstraints(
+                                          minWidth: menuWidth,
+                                          maxWidth: menuWidth,
+                                        ),
+                                        color: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.max,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                option,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (isHighlighted) ...[
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: AppTheme.secondaryColor.withValues(alpha: 0.12),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  highlightLabel!,
+                                                  style: AppTheme.bodySmall.copyWith(
+                                                    fontSize: 11,
+                                                    letterSpacing: 0.3,
+                                                    color: AppTheme.secondaryColor,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
                               ),
                             ),
                           ),
-                        ],
-                      ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+                
+                overlayState.insert(overlayEntry);
+              },
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      effectiveValue,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                )
-                .toList(),
-            onChanged: (selected) {
-              if (selected == null) return;
-              onChanged(selected);
-            },
-          ),
-        ),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    color: AppTheme.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

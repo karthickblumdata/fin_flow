@@ -983,7 +983,7 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                         const SizedBox(height: 12),
                         SizedBox(
                           width: double.infinity,
-                          child: OutlinedButton.icon(
+                          child: ElevatedButton.icon(
                             onPressed: _onAddUser,
                             icon: Icon(Icons.person_add_outlined, size: 18),
                             label: Text(
@@ -991,11 +991,12 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                               style: AppTheme.bodySmall.copyWith(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
+                                color: Colors.white,
                               ),
                             ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppTheme.primaryColor,
-                              side: BorderSide(color: AppTheme.primaryColor.withValues(alpha: 0.6)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                                 vertical: 8,
@@ -1328,19 +1329,20 @@ class _ManageUsersScreenContentState extends State<_ManageUsersScreenContent> {
                 if (_isViewOnly) const SizedBox(width: 12),
                 // Add User button - only show if user has create permission
                 if (_canCreate)
-                  OutlinedButton.icon(
+                  ElevatedButton.icon(
                     onPressed: _onAddUser,
-                    icon: Icon(Icons.person_add_outlined, size: isMobile ? 18 : 20),
+                    icon: Icon(Icons.person_add_outlined, size: isMobile ? 18 : 20, color: Colors.white),
                     label: Text(
                       'Add User',
                       style: AppTheme.bodySmall.copyWith(
                         fontWeight: FontWeight.w600,
                         fontSize: isMobile ? 13 : 14,
+                        color: Colors.white,
                       ),
                     ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primaryColor,
-                      side: BorderSide(color: AppTheme.primaryColor.withValues(alpha: 0.6)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(
                         horizontal: isMobile ? 12 : 16,
                         vertical: isMobile ? 8 : 10,

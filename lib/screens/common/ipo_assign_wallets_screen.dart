@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../services/wallet_service.dart';
 import '../../utils/responsive.dart';
+import '../../utils/profile_image_helper.dart';
 
 enum UserStatusFilter { active, inactive, all }
 
@@ -32,6 +33,7 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
   static const double _cardHeight = 200;
   static const double _cardSpacing = 16;
   static const int _maxCardsPerRow = 4;
+  static const String _defaultContactNumber = '000-000-0000';
 
   @override
   void initState() {
@@ -57,6 +59,15 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
         final users = (result['users'] as List<dynamic>?)
             ?.map((u) => u as Map<String, dynamic>)
             .toList() ?? [];
+        
+        // Check wallet status for each user
+        for (var user in users) {
+          final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+          if (userId.isNotEmpty) {
+            final hasWallet = await WalletService.hasWallet(userId: userId);
+            user['hasWallet'] = hasWallet;
+          }
+        }
         
         setState(() {
           _users = users;
@@ -220,138 +231,301 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
     }).toList();
   }
 
+  Color _getRoleColor(String role) {
+    switch (role) {
+      case 'Super Admin':
+      case 'SuperAdmin':
+        return AppTheme.primaryColor;
+      case 'Admin':
+        return AppTheme.warningColor;
+      case 'Staff':
+        return AppTheme.secondaryColor;
+      default:
+        return AppTheme.textSecondary;
+    }
+  }
+
+  String _extractContactNumber(Map<String, dynamic> user) {
+    final possibleKeys = [
+      'phone',
+      'phoneNumber',
+      'mobile',
+      'mobileNumber',
+      'contact',
+      'contactNumber',
+      'telephone',
+    ];
+
+    for (final key in possibleKeys) {
+      final value = user[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString();
+      }
+    }
+    return '';
+  }
+
+  Widget _buildContactLine({
+    IconData? icon,
+    required String label,
+  }) {
+    if (label.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(
+            icon,
+            size: 14,
+            color: AppTheme.textSecondary,
+          ),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: Text(
+            label,
+            style: AppTheme.bodySmall.copyWith(
+              color: AppTheme.textSecondary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProfilePreview({
+    required String name,
+    required String? imageUrl,
+    required Color roleColor,
+    bool isMobile = false,
+  }) {
+    final maxSize = isMobile ? 80.0 : 104.0;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxSize),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            color: roleColor.withValues(alpha: 0.14),
+            child: imageUrl != null && imageUrl.isNotEmpty
+                ? Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return _ProfileInitials(
+                        name: name,
+                        roleColor: roleColor,
+                      );
+                    },
+                  )
+                : _ProfileInitials(
+                    name: name,
+                    roleColor: roleColor,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String? _extractProfileImage(Map<String, dynamic> user) {
+    return ProfileImageHelper.extractImageUrl(user);
+  }
+
   Widget _buildUserCard(Map<String, dynamic> user, bool isMobile) {
     final userName = user['name']?.toString() ?? 'Unknown';
     final userEmail = user['email']?.toString() ?? '';
     final userRole = user['role']?.toString() ?? '';
     final isActive = _isUserActive(user);
     final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+    final roleColor = _getRoleColor(userRole);
+    final contactNumber = _extractContactNumber(user);
+    final displayContactNumber = contactNumber.isEmpty ? _defaultContactNumber : contactNumber;
+    final imageUrl = _extractProfileImage(user);
 
-    // Get user initials for avatar
-    final initials = userName
-        .split(' ')
-        .take(2)
-        .map((word) => word.isNotEmpty ? word[0].toUpperCase() : '')
-        .join('');
+    final bannerMessage = isActive ? 'ACTIVE' : 'INACTIVE';
+    final bannerColor = isActive ? AppTheme.secondaryColor : AppTheme.errorColor;
+    final EdgeInsets cardPadding = isMobile
+        ? const EdgeInsets.fromLTRB(18, 10, 18, 10)
+        : const EdgeInsets.fromLTRB(18, 8, 18, 8);
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: AppTheme.borderColor.withValues(alpha: 0.3),
-          width: 1,
-        ),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.textPrimary.withValues(alpha: 0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
-      child: InkWell(
-        onTap: () => _assignWallet(userId, userName),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          height: _cardHeight,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Avatar and Status Row
-              Row(
-                children: [
-                  // Avatar
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        initials.isNotEmpty ? initials : '?',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primaryColor,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _showAssignmentDialog(context, user, userName, userEmail, userRole, roleColor, imageUrl),
+            borderRadius: BorderRadius.circular(20),
+            child: Banner(
+              message: bannerMessage,
+              location: BannerLocation.topEnd,
+              color: bannerColor,
+              textStyle: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+              ),
+              child: Container(
+                padding: cardPadding,
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceColor,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppTheme.borderColor.withValues(alpha: 0.35),
+                    width: 0.9,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildProfilePreview(
+                            name: userName,
+                            imageUrl: imageUrl,
+                            roleColor: roleColor,
+                            isMobile: isMobile,
+                          ),
+                        ],
+                      ),
+                      SizedBox(width: isMobile ? 12 : 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              userName,
+                              style: AppTheme.headingSmall.copyWith(
+                                fontSize: isMobile ? 16 : 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            _buildContactLine(
+                              icon: null,
+                              label: userEmail,
+                            ),
+                            const SizedBox(height: 4),
+                            if (userRole.isNotEmpty)
+                              Text(
+                                userRole,
+                                style: AppTheme.bodySmall.copyWith(
+                                  color: roleColor,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: isMobile ? 12 : 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
                         ),
                       ),
+                      ],
                     ),
-                  ),
-                  const Spacer(),
-                  // Status Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isActive
-                          ? AppTheme.secondaryColor.withOpacity(0.15)
-                          : AppTheme.textSecondary.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      isActive ? 'ACTIVE' : 'INACTIVE',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: isActive
-                            ? AppTheme.secondaryColor
-                            : AppTheme.textSecondary,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
+                    const SizedBox(height: 8),
+                    isMobile
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildContactLine(
+                                icon: Icons.badge_outlined,
+                                label: 'Assigned for:',
+                              ),
+                              const SizedBox(height: 4),
+                              _buildContactLine(
+                                icon: Icons.person_outline,
+                                label: 'Assigned to:',
+                              ),
+                            ],
+                          )
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
+                                child: _buildContactLine(
+                                  icon: Icons.badge_outlined,
+                                  label: 'Assigned for:',
+                                ),
+                              ),
+                              Flexible(
+                                child: _buildContactLine(
+                                  icon: Icons.person_outline,
+                                  label: 'Assigned to:',
+                                ),
+                              ),
+                            ],
+                          ),
                 ],
               ),
-              const SizedBox(height: 12),
-              // User Name
-              Text(
-                userName,
-                style: AppTheme.bodyLarge.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-              // Email
-              Text(
-                userEmail,
-                style: AppTheme.bodyMedium.copyWith(
-                  color: AppTheme.textSecondary,
-                  fontSize: 13,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-              // Role
-              Text(
-                userRole,
-                style: AppTheme.bodySmall.copyWith(
-                  color: AppTheme.textSecondary.withValues(alpha: 0.8),
-                  fontSize: 12,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const Spacer(),
-              // Assign Wallet Button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _assignWallet(userId, userName),
-                  icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
-                  label: const Text('Assign Wallet'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.primaryColor,
-                    side: BorderSide(color: AppTheme.primaryColor),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
+      ),
+      ),
+    );
+  }
+
+  void _showAssignmentDialog(
+    BuildContext context,
+    Map<String, dynamic> user,
+    String userName,
+    String userEmail,
+    String userRole,
+    Color roleColor,
+    String? imageUrl,
+  ) {
+    final isMobile = Responsive.isMobile(context);
+    
+    showDialog(
+      context: context,
+      builder: (context) => _AssignmentDialogContent(
+        initialUser: user,
+        initialUserName: userName,
+        initialUserEmail: userEmail,
+        initialUserRole: userRole,
+        initialRoleColor: roleColor,
+        initialImageUrl: imageUrl,
+        allUsers: _users,
+        isMobile: isMobile,
       ),
     );
   }
@@ -498,32 +672,43 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
                           ],
                         ),
                       )
-                    : SingleChildScrollView(
-                        padding: EdgeInsets.all(
-                          isMobile ? 12 : (isTablet ? 20 : 24),
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final availableWidth = constraints.maxWidth;
-                            final cardsPerRow = isMobile
-                                ? 1
-                                : isTablet
-                                    ? 2
-                                    : (availableWidth / (_cardWidth + _cardSpacing)).floor().clamp(1, _maxCardsPerRow);
-                            final cardWidth = (availableWidth - (_cardSpacing * (cardsPerRow - 1))) / cardsPerRow;
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          final availableWidth = constraints.maxWidth;
+                          final horizontalPadding = isMobile ? 16.0 : (isTablet ? 20.0 : 24.0);
+                          final effectiveWidth = availableWidth - (horizontalPadding * 2);
+                          final cardsPerRow = isMobile
+                              ? 1
+                              : isTablet
+                                  ? 2
+                                  : (effectiveWidth / (_cardWidth + _cardSpacing)).floor().clamp(1, _maxCardsPerRow);
+                          final cardWidth = cardsPerRow > 0
+                              ? (effectiveWidth - (_cardSpacing * (cardsPerRow - 1))) / cardsPerRow
+                              : _cardWidth;
 
-                            return Wrap(
-                              spacing: _cardSpacing,
-                              runSpacing: _cardSpacing,
-                              children: _filteredUsers.map((user) {
-                                return SizedBox(
-                                  width: cardWidth,
-                                  child: _buildUserCard(user, isMobile),
-                                );
-                              }).toList(),
-                            );
-                          },
-                        ),
+                          // Calculate aspect ratio based on card content (avatar 104px + padding)
+                          // Approximate card height: avatar (104) + top/bottom padding (20) = ~124px minimum
+                          // With content, button, and spacing, typically around 160-180px
+                          final estimatedCardHeight = isMobile ? 170.0 : 160.0;
+                          final aspectRatio = cardWidth / estimatedCardHeight;
+
+                          return GridView.builder(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: horizontalPadding,
+                              vertical: isMobile ? 12.0 : 20.0,
+                            ),
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: cardsPerRow,
+                              crossAxisSpacing: _cardSpacing,
+                              mainAxisSpacing: _cardSpacing,
+                              childAspectRatio: aspectRatio > 0 ? aspectRatio : 1.75,
+                            ),
+                            itemCount: _filteredUsers.length,
+                            itemBuilder: (context, index) {
+                              return _buildUserCard(_filteredUsers[index], isMobile);
+                            },
+                          );
+                        },
                       ),
               ),
             ],
@@ -558,6 +743,852 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
         ],
       ),
       body: content,
+    );
+  }
+}
+
+class _AssignmentDialogContent extends StatefulWidget {
+  final Map<String, dynamic> initialUser;
+  final String initialUserName;
+  final String initialUserEmail;
+  final String initialUserRole;
+  final Color initialRoleColor;
+  final String? initialImageUrl;
+  final List<Map<String, dynamic>> allUsers;
+  final bool isMobile;
+
+  const _AssignmentDialogContent({
+    required this.initialUser,
+    required this.initialUserName,
+    required this.initialUserEmail,
+    required this.initialUserRole,
+    required this.initialRoleColor,
+    required this.initialImageUrl,
+    required this.allUsers,
+    required this.isMobile,
+  });
+
+  @override
+  State<_AssignmentDialogContent> createState() => _AssignmentDialogContentState();
+}
+
+class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
+  late Map<String, dynamic> _selectedUser;
+  late String _selectedUserName;
+  late String _selectedUserEmail;
+  late String _selectedUserRole;
+  late Color _selectedRoleColor;
+  late String? _selectedImageUrl;
+  final TextEditingController _assignedForSearchController = TextEditingController();
+  List<Map<String, dynamic>> _filteredAssignedForUsers = [];
+  List<Map<String, dynamic>> _activeUsers = [];
+  final GlobalKey _dropdownButtonKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedUser = widget.initialUser;
+    _selectedUserName = widget.initialUserName;
+    _selectedUserEmail = widget.initialUserEmail;
+    _selectedUserRole = widget.initialUserRole;
+    _selectedRoleColor = widget.initialRoleColor;
+    _selectedImageUrl = widget.initialImageUrl;
+    _assignedForSearchController.addListener(_filterAssignedForUsers);
+    _loadActiveUsers();
+  }
+
+  @override
+  void dispose() {
+    _assignedForSearchController.dispose();
+    super.dispose();
+  }
+
+  void _loadActiveUsers() {
+    setState(() {
+      final selectedUserId = _selectedUser['_id']?.toString() ?? _selectedUser['id']?.toString() ?? '';
+      _activeUsers = widget.allUsers.where((user) {
+        final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+        // Exclude the selected user from assigned for list
+        return user['isVerified'] == true && userId != selectedUserId;
+      }).toList();
+      _filteredAssignedForUsers = _activeUsers;
+    });
+  }
+
+  void _filterAssignedForUsers() {
+    final query = _assignedForSearchController.text.toLowerCase();
+    setState(() {
+      _filteredAssignedForUsers = _activeUsers.where((user) {
+        final name = (user['name'] ?? '').toLowerCase();
+        final email = (user['email'] ?? '').toLowerCase();
+        final role = (user['role'] ?? '').toLowerCase();
+        return query.isEmpty ||
+            name.contains(query) ||
+            email.contains(query) ||
+            role.contains(query);
+      }).toList();
+    });
+  }
+
+  Color _getRoleColor(String role) {
+    switch (role) {
+      case 'Super Admin':
+      case 'SuperAdmin':
+        return AppTheme.primaryColor;
+      case 'Admin':
+        return AppTheme.warningColor;
+      case 'Staff':
+        return AppTheme.secondaryColor;
+      default:
+        return AppTheme.textSecondary;
+    }
+  }
+
+  String? _extractProfileImage(Map<String, dynamic> user) {
+    return ProfileImageHelper.extractImageUrl(user);
+  }
+
+  void _onUserSelected(Map<String, dynamic> user) {
+    final userName = user['name']?.toString() ?? 'Unknown';
+    final userEmail = user['email']?.toString() ?? '';
+    final userRole = user['role']?.toString() ?? '';
+    final roleColor = _getRoleColor(userRole);
+    final imageUrl = _extractProfileImage(user);
+    
+    setState(() {
+      _selectedUser = user;
+      _selectedUserName = userName;
+      _selectedUserEmail = userEmail;
+      _selectedUserRole = userRole;
+      _selectedRoleColor = roleColor;
+      _selectedImageUrl = imageUrl;
+    });
+    
+    // Update assigned for list to exclude the selected user
+    _loadActiveUsers();
+    // Clear search when user changes
+    _assignedForSearchController.clear();
+  }
+
+  void _showUserDropdown(BuildContext context, GlobalKey buttonKey) {
+    final RenderBox? renderBox = buttonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+    final screenHeight = MediaQuery.of(context).size.height;
+    final menuHeight = (widget.allUsers.length * 60.0).clamp(0.0, 300.0);
+    
+    // Calculate position to open downward
+    final topPosition = offset.dy + size.height;
+    final bottomPosition = (topPosition + menuHeight).clamp(0.0, screenHeight);
+
+    showMenu<Map<String, dynamic>>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx,
+        topPosition,
+        offset.dx + size.width,
+        bottomPosition,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      items: widget.allUsers.map((user) {
+        final userName = user['name']?.toString() ?? 'Unknown';
+        final userEmail = user['email']?.toString() ?? '';
+        return PopupMenuItem<Map<String, dynamic>>(
+          value: user,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                userName,
+                style: AppTheme.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (userEmail.isNotEmpty)
+                Text(
+                  userEmail,
+                  style: AppTheme.bodySmall.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+            ],
+          ),
+        );
+      }).toList(),
+    ).then((selectedUser) {
+      if (selectedUser != null) {
+        _onUserSelected(selectedUser);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      insetPadding: widget.isMobile 
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 24)
+          : const EdgeInsets.all(24),
+      child: Container(
+        width: widget.isMobile ? screenWidth : 600,
+        constraints: BoxConstraints(
+          maxHeight: widget.isMobile 
+              ? screenHeight * 0.9 
+              : screenHeight * 0.8,
+          maxWidth: widget.isMobile ? screenWidth - 32 : 600,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Dropdown Header
+            Container(
+              padding: EdgeInsets.all(widget.isMobile ? 16 : 20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      key: _dropdownButtonKey,
+                      onTap: () => _showUserDropdown(context, _dropdownButtonKey),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: widget.isMobile ? 12 : 16,
+                          vertical: widget.isMobile ? 10 : 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppTheme.borderColor.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _selectedUserName,
+                                style: AppTheme.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: widget.isMobile ? 14 : 16,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.arrow_drop_down,
+                              color: AppTheme.textSecondary,
+                              size: widget.isMobile ? 20 : 24,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: widget.isMobile ? 8 : 12),
+                  IconButton(
+                    icon: Icon(
+                      Icons.close,
+                      size: widget.isMobile ? 20 : 24,
+                    ),
+                    padding: EdgeInsets.all(widget.isMobile ? 8 : 12),
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            // Content - Responsive layout
+            Flexible(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  ),
+                ),
+                child: widget.isMobile
+                    ? _buildMobileLayout(context)
+                    : _buildDesktopLayout(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Assigned to section
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                bottom: BorderSide(
+                  color: AppTheme.borderColor.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.person_outline,
+                      size: 18,
+                      color: AppTheme.primaryColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Assigned to',
+                      style: AppTheme.headingSmall.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  height: 80,
+                  alignment: Alignment.center,
+                  child: Text(
+                    'No assignments',
+                    style: AppTheme.bodyMedium.copyWith(
+                      color: AppTheme.textSecondary,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Assigned for section
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.badge_outlined,
+                      size: 18,
+                      color: AppTheme.primaryColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Assigned for',
+                      style: AppTheme.headingSmall.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Search bar at the top for mobile
+                TextField(
+                  controller: _assignedForSearchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search users...',
+                    hintStyle: const TextStyle(
+                      fontSize: 13,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      size: 18,
+                    ),
+                    suffixIcon: _assignedForSearchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(
+                              Icons.clear,
+                              size: 18,
+                            ),
+                            onPressed: () {
+                              _assignedForSearchController.clear();
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                  style: const TextStyle(
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Active user list
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.3,
+                  ),
+                  child: _filteredAssignedForUsers.isEmpty
+                      ? Container(
+                          height: 100,
+                          alignment: Alignment.center,
+                          child: Text(
+                            'No active users',
+                            style: AppTheme.bodyMedium.copyWith(
+                              color: AppTheme.textSecondary,
+                              fontSize: 14,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _filteredAssignedForUsers.length,
+                          itemBuilder: (context, index) {
+                            final user = _filteredAssignedForUsers[index];
+                            final userName = user['name']?.toString() ?? 'Unknown';
+                            final userEmail = user['email']?.toString() ?? '';
+                            final userRole = user['role']?.toString() ?? '';
+                            final roleColor = _getRoleColor(userRole);
+                            
+                            return ListTile(
+                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              leading: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: roleColor.withValues(alpha: 0.2),
+                                child: Text(
+                                  userName.isNotEmpty
+                                      ? userName.substring(0, 1).toUpperCase()
+                                      : '?',
+                                  style: TextStyle(
+                                    color: roleColor,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                userName,
+                                style: AppTheme.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                userEmail,
+                                style: AppTheme.bodySmall.copyWith(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: MediaQuery.of(context).size.width * 0.25,
+                                ),
+                                child: Text(
+                                  userRole,
+                                  style: AppTheme.bodySmall.copyWith(
+                                    color: roleColor,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                // Cancel and Save buttons
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(
+                              color: AppTheme.borderColor.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: AppTheme.bodyMedium.copyWith(
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          // TODO: Implement save functionality
+                          Navigator.of(context).pop();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          'Save',
+                          style: AppTheme.bodyMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return Container(
+      height: 400,
+      child: Row(
+        children: [
+          // Left side - Assigned to
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  right: BorderSide(
+                    color: AppTheme.borderColor.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        size: 20,
+                        color: AppTheme.primaryColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Assigned to',
+                        style: AppTheme.headingSmall.copyWith(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Content for assigned to
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'No assignments',
+                        style: AppTheme.bodyMedium.copyWith(
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Right side - Assigned for
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.only(
+                  bottomRight: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.badge_outlined,
+                        size: 20,
+                        color: AppTheme.primaryColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Assigned for',
+                        style: AppTheme.headingSmall.copyWith(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Active user list
+                  Expanded(
+                    child: _filteredAssignedForUsers.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No active users',
+                              style: AppTheme.bodyMedium.copyWith(
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _filteredAssignedForUsers.length,
+                            itemBuilder: (context, index) {
+                              final user = _filteredAssignedForUsers[index];
+                              final userName = user['name']?.toString() ?? 'Unknown';
+                              final userEmail = user['email']?.toString() ?? '';
+                              final userRole = user['role']?.toString() ?? '';
+                              final roleColor = _getRoleColor(userRole);
+                              
+                              return ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                leading: CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: roleColor.withValues(alpha: 0.2),
+                                  child: Text(
+                                    userName.isNotEmpty
+                                        ? userName.substring(0, 1).toUpperCase()
+                                        : '?',
+                                    style: TextStyle(
+                                      color: roleColor,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                title: Text(
+                                  userName,
+                                  style: AppTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  userEmail,
+                                  style: AppTheme.bodySmall.copyWith(
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: Text(
+                                  userRole,
+                                  style: AppTheme.bodySmall.copyWith(
+                                    color: roleColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  // Search bar at the end
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _assignedForSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search users...',
+                      hintStyle: const TextStyle(
+                        fontSize: 14,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        size: 20,
+                      ),
+                      suffixIcon: _assignedForSearchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.clear,
+                                size: 20,
+                              ),
+                              onPressed: () {
+                                _assignedForSearchController.clear();
+                              },
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                    style: const TextStyle(
+                      fontSize: 14,
+                    ),
+                  ),
+                  // Cancel and Save buttons
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(
+                              color: AppTheme.borderColor.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: AppTheme.bodyMedium.copyWith(
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        onPressed: () {
+                          // TODO: Implement save functionality
+                          Navigator.of(context).pop();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          'Save',
+                          style: AppTheme.bodyMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileInitials extends StatelessWidget {
+  const _ProfileInitials({
+    required this.name,
+    required this.roleColor,
+  });
+
+  final String name;
+  final Color roleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = name.trim().isEmpty
+        ? '?'
+        : name
+            .trim()
+            .split(RegExp(r'\s+'))
+            .where((part) => part.isNotEmpty)
+            .take(2)
+            .map((part) => part.substring(0, 1).toUpperCase())
+            .join();
+
+    return Container(
+      color: roleColor.withValues(alpha: 0.12),
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: AppTheme.headingMedium.copyWith(
+          color: roleColor,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }

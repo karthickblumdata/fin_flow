@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../services/user_service.dart';
 import '../../services/role_service.dart';
@@ -256,6 +257,137 @@ class _RolesScreenState extends State<RolesScreen> {
       appBar: AppBar(
         leading: const ScreenBackButton(fallbackRoute: '/super-admin-dashboard'),
         title: const Text('Roles'),
+        actions: [
+          // Quick Actions button
+          PopupMenuButton<String>(
+            icon: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.bolt,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Quick Actions',
+                    style: AppTheme.bodySmall.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            offset: const Offset(0, 50),
+            elevation: 8,
+            shadowColor: Colors.black.withOpacity(0.1),
+            surfaceTintColor: Colors.transparent,
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            onSelected: (String value) {
+              if (value == 'create_role') {
+                _onCreateRolePressed();
+              } else if (value == 'add_user') {
+                context.push('/manage-users');
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              // Use the same solid color as Quick Actions button (AppTheme.primaryColor)
+              final menuItemBgColor = AppTheme.primaryColor;
+              
+              return [
+                PopupMenuItem<String>(
+                  value: 'create_role',
+                  padding: EdgeInsets.zero,
+                  child: Material(
+                    color: menuItemBgColor,
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _onCreateRolePressed();
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.add_circle_outline,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Create Role',
+                              style: AppTheme.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'add_user',
+                  padding: EdgeInsets.zero,
+                  child: Material(
+                    color: menuItemBgColor,
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        Navigator.pop(context);
+                        context.push('/manage-users');
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.person_add_outlined,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Add User',
+                              style: AppTheme.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ];
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: body,
     );
@@ -463,16 +595,27 @@ class _RolesScreenState extends State<RolesScreen> {
       spacing: 12,
       runSpacing: 8,
       children: [
-        OutlinedButton.icon(
+        ElevatedButton.icon(
           onPressed: _onCreateRolePressed,
-          style: actionStyle,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
           icon: Icon(
             Icons.add_circle_outline,
             size: isCompact ? 16 : 18,
+            color: Colors.white,
           ),
           label: Text(
             'Create Role',
-            style: labelStyle,
+            style: labelStyle.copyWith(color: Colors.white),
           ),
         ),
       ],

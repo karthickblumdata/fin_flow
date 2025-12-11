@@ -38,6 +38,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
   bool _isSubmitting = false;
   
   Map<String, dynamic>? _selectedExpenseType;
+  int? _selectedExpenseTypeIndex;
   List<Map<String, dynamic>> _expenseTypes = [];
   XFile? _selectedProofImage;
   final ImagePicker _imagePicker = ImagePicker();
@@ -86,6 +87,9 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
               {'name': 'Misc', 'imageUrl': null, 'proofRequired': false},
             ];
           }
+          // Reset selection when types are loaded
+          _selectedExpenseType = null;
+          _selectedExpenseTypeIndex = null;
         });
       }
     } catch (e) {
@@ -98,6 +102,9 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
           {'name': 'Maintenance', 'imageUrl': null, 'proofRequired': false},
           {'name': 'Misc', 'imageUrl': null, 'proofRequired': false},
         ];
+        // Reset selection when types are loaded
+        _selectedExpenseType = null;
+        _selectedExpenseTypeIndex = null;
       });
     } finally {
       setState(() {
@@ -256,19 +263,22 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
         borderRadius: BorderRadius.circular(20),
       ),
       backgroundColor: Colors.white,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: isMobile ? double.infinity : (isTablet ? 700 : 800),
-          maxHeight: MediaQuery.of(context).size.height * (isMobile ? 0.95 : 0.85),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: isMobile ? double.infinity : (isTablet ? 700 : 800),
+            maxHeight: MediaQuery.of(context).size.height * (isMobile ? 0.95 : 0.85),
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          padding: EdgeInsets.zero,
+          child: _currentStep == 1
+              ? _buildExpenseTypeSelectionStep(isMobile: isMobile, isTablet: isTablet)
+              : _buildExpenseDetailsStep(isMobile: isMobile, isTablet: isTablet),
         ),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        padding: EdgeInsets.zero,
-        child: _currentStep == 1
-            ? _buildExpenseTypeSelectionStep(isMobile: isMobile, isTablet: isTablet)
-            : _buildExpenseDetailsStep(isMobile: isMobile, isTablet: isTablet),
       ),
     );
   }
@@ -443,31 +453,36 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                         child: Center(child: CircularProgressIndicator()),
                       )
                     : GridView.builder(
+                        key: ValueKey('expense_types_${_selectedExpenseTypeIndex ?? 'none'}'),
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 6,
-                          mainAxisSpacing: 6,
-                          childAspectRatio: 0.95,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: isMobile ? 2 : (isTablet ? 3 : 3),
+                          crossAxisSpacing: isMobile ? 12 : 16,
+                          mainAxisSpacing: isMobile ? 12 : 16,
+                          childAspectRatio: isMobile ? 0.95 : 0.85, // Consistent aspect ratio for tablet/desktop
                         ),
                         itemCount: _expenseTypes.length,
                         itemBuilder: (context, index) {
                           final expenseType = _expenseTypes[index];
-                          final typeName = expenseType['name']?.toString() ?? '';
+                          final typeName = (expenseType['name']?.toString() ?? '').trim();
                           final imageUrl = expenseType['imageUrl']?.toString();
-                          final isSelected = _selectedExpenseType != null &&
-                              _selectedExpenseType!['name'] == typeName;
+                          final isSelected = _selectedExpenseTypeIndex == index;
                           final displayImageUrl = imageUrl ?? _getExpenseTypeImageUrl(typeName);
 
                           return InkWell(
+                            key: ValueKey('expense_type_${typeName}_$index'),
                             onTap: () {
                               setState(() {
                                 _selectedExpenseType = expenseType;
+                                _selectedExpenseTypeIndex = index;
                               });
                             },
                             borderRadius: BorderRadius.circular(8),
-                            child: Container(
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeInOut,
+                              key: ValueKey('container_${typeName}_${index}_$isSelected'),
                               decoration: BoxDecoration(
                                 color: isSelected
                                     ? AppTheme.warningColor.withOpacity(0.1)
@@ -476,69 +491,78 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                                 border: Border.all(
                                   color: isSelected
                                       ? AppTheme.warningColor
-                                      : AppTheme.borderColor,
-                                  width: isSelected ? 1.5 : 0.5,
+                                      : AppTheme.borderColor.withOpacity(0.5),
+                                  width: isSelected ? 2.0 : 1.0,
                                 ),
                               ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
+                              child: SizedBox.expand(
                                 child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.max,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    // Image
+                                    // Image - fills most of the card (80% of space)
                                     Expanded(
-                                      flex: 3,
-                                      child: Container(
-                                        width: double.infinity,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(
-                                            color: AppTheme.borderColor.withOpacity(0.3),
-                                            width: 0.5,
-                                          ),
+                                      flex: 4,
+                                      child: ClipRRect(
+                                        borderRadius: const BorderRadius.only(
+                                          topLeft: Radius.circular(7),
+                                          topRight: Radius.circular(7),
                                         ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(4),
-                                          child: displayImageUrl != null
-                                              ? Image.network(
-                                                  displayImageUrl,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (context, error, stackTrace) {
-                                                    return Icon(
-                                                      Icons.category_outlined,
-                                                      size: 18,
-                                                      color: AppTheme.textSecondary,
-                                                    );
-                                                  },
-                                                )
-                                              : Icon(
-                                                  Icons.category_outlined,
-                                                  size: 18,
-                                                  color: AppTheme.textSecondary,
+                                        child: displayImageUrl != null
+                                            ? Image.network(
+                                                displayImageUrl,
+                                                fit: BoxFit.cover,
+                                                width: double.infinity,
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  return Container(
+                                                    color: AppTheme.borderColor.withOpacity(0.1),
+                                                    child: Center(
+                                                      child: Icon(
+                                                        Icons.category_outlined,
+                                                        size: isMobile ? 24 : 40,
+                                                        color: AppTheme.textSecondary.withOpacity(0.5),
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              )
+                                            : Container(
+                                                color: AppTheme.borderColor.withOpacity(0.1),
+                                                child: Center(
+                                                  child: Icon(
+                                                    Icons.category_outlined,
+                                                    size: isMobile ? 24 : 40,
+                                                    color: AppTheme.textSecondary.withOpacity(0.5),
+                                                  ),
                                                 ),
-                                        ),
+                                              ),
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
-                                    // Name
-                                    Expanded(
+                                    // Name - takes remaining space (20% of space)
+                                    Flexible(
                                       flex: 1,
-                                      child: Center(
-                                        child: Text(
-                                          typeName,
-                                          style: AppTheme.bodyMedium.copyWith(
-                                            fontWeight: isSelected
-                                                ? FontWeight.w600
-                                                : FontWeight.normal,
-                                            fontSize: 9,
-                                            color: isSelected
-                                                ? AppTheme.warningColor
-                                                : AppTheme.textPrimary,
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          vertical: isMobile ? 6 : 10,
+                                          horizontal: 8,
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            typeName,
+                                            style: AppTheme.bodyMedium.copyWith(
+                                              fontWeight: isSelected
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w500,
+                                              fontSize: isMobile ? 10 : 12,
+                                              color: isSelected
+                                                  ? AppTheme.warningColor
+                                                  : AppTheme.textPrimary,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          textAlign: TextAlign.center,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                     ),
@@ -555,41 +579,49 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
         ),
         
         // Continue Button
-        Container(
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, -2),
-              ),
-            ],
+        ClipRRect(
+          borderRadius: const BorderRadius.only(
+            bottomLeft: Radius.circular(20),
+            bottomRight: Radius.circular(20),
           ),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _selectedExpenseType == null
-                  ? null
-                  : () {
-                      setState(() {
-                        _currentStep = 2;
-                      });
-                    },
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                backgroundColor: AppTheme.warningColor,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: AppTheme.borderColor,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
                 ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              ],
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _selectedExpenseType == null
+                    ? null
+                    : () {
+                        setState(() {
+                          _currentStep = 2;
+                        });
+                      },
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  backgroundColor: AppTheme.warningColor,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppTheme.borderColor,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(20),
+                      bottomRight: Radius.circular(20),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   const Text(
                     'Continue',
                     style: TextStyle(
@@ -606,6 +638,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
               ),
             ),
           ),
+        ),
         ),
       ],
     );
@@ -632,8 +665,8 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
             children: [
               // Selected expense type image
               Container(
-                width: isMobile ? 32 : 40,
-                height: isMobile ? 32 : 40,
+                width: isMobile ? 28 : 40,
+                height: isMobile ? 28 : 40,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
@@ -649,14 +682,14 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                           errorBuilder: (context, error, stackTrace) {
                             return Icon(
                               Icons.category_outlined,
-                              size: isMobile ? 18 : 24,
+                              size: isMobile ? 16 : 24,
                               color: Colors.white,
                             );
                           },
                         )
                       : Icon(
                           Icons.category_outlined,
-                          size: isMobile ? 18 : 24,
+                          size: isMobile ? 16 : 24,
                           color: Colors.white,
                         ),
                 ),
@@ -739,7 +772,10 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                     ],
                     decoration: InputDecoration(
                       labelText: 'Amount',
-                      prefixIcon: const Icon(Icons.currency_rupee),
+                      prefixIcon: Icon(
+                        Icons.currency_rupee,
+                        size: isMobile ? 20 : 24,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -764,7 +800,10 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                     decoration: InputDecoration(
                       labelText: 'Description (Optional)',
                       hintText: 'Enter description',
-                      prefixIcon: const Icon(Icons.description),
+                      prefixIcon: Icon(
+                        Icons.description,
+                        size: isMobile ? 20 : 24,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -779,7 +818,10 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                     decoration: InputDecoration(
                       labelText: 'Remark (Optional)',
                       hintText: 'Enter remark',
-                      prefixIcon: const Icon(Icons.note_outlined),
+                      prefixIcon: Icon(
+                        Icons.note_outlined,
+                        size: isMobile ? 20 : 24,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -953,9 +995,9 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                                       Stack(
                                         alignment: Alignment.center,
                                         children: [
-                                          const Icon(
+                                          Icon(
                                             Icons.add_photo_alternate_outlined,
-                                            size: 40,
+                                            size: isMobile ? 32 : 40,
                                             color: AppTheme.textSecondary,
                                           ),
                                           Positioned(
@@ -967,9 +1009,9 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                                                 color: AppTheme.textSecondary,
                                                 shape: BoxShape.circle,
                                               ),
-                                              child: const Icon(
+                                              child: Icon(
                                                 Icons.add,
-                                                size: 16,
+                                                size: isMobile ? 14 : 16,
                                                 color: Colors.white,
                                               ),
                                             ),
@@ -997,51 +1039,24 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
         ),
         
         // Action Buttons
-        Container(
-          padding: EdgeInsets.all(isMobile ? 12 : 20),
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(color: AppTheme.borderColor),
-            ),
+        ClipRRect(
+          borderRadius: const BorderRadius.only(
+            bottomLeft: Radius.circular(20),
+            bottomRight: Radius.circular(20),
           ),
+          child: Container(
+            padding: EdgeInsets.all(isMobile ? 12 : 20),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: AppTheme.borderColor),
+              ),
+            ),
           child: isMobile
-              ? Column(
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: (_isSubmitting || (_isProofRequired() && _selectedProofImage == null))
-                            ? null
-                            : _submitExpense,
-                        style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.symmetric(vertical: isMobile ? 14 : 16),
-                          backgroundColor: AppTheme.warningColor,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: AppTheme.borderColor,
-                        ),
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : const Text(
-                                'Submit',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
+                    Flexible(
                       child: TextButton(
                         onPressed: _isSubmitting
                             ? null
@@ -1057,6 +1072,37 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                             fontSize: isMobile ? 14 : null,
                           ),
                         ),
+                      ),
+                    ),
+                    SizedBox(width: isMobile ? 8 : 12),
+                    Flexible(
+                      child: ElevatedButton(
+                        onPressed: (_isSubmitting || (_isProofRequired() && _selectedProofImage == null))
+                            ? null
+                            : _submitExpense,
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.symmetric(vertical: isMobile ? 18 : 20, horizontal: 24),
+                          backgroundColor: AppTheme.secondaryColor,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: AppTheme.borderColor,
+                          minimumSize: Size(0, isMobile ? 52 : 56),
+                        ),
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : Text(
+                                'Submit',
+                                style: TextStyle(
+                                  fontSize: isMobile ? 16 : 18,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -1090,10 +1136,11 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                             ? null
                             : _submitExpense,
                         style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.symmetric(vertical: isMobile ? 14 : 16),
-                          backgroundColor: AppTheme.warningColor,
+                          padding: EdgeInsets.symmetric(vertical: isMobile ? 18 : 20, horizontal: 24),
+                          backgroundColor: AppTheme.secondaryColor,
                           foregroundColor: Colors.white,
                           disabledBackgroundColor: AppTheme.borderColor,
+                          minimumSize: Size(0, isMobile ? 52 : 56),
                         ),
                         child: _isSubmitting
                             ? const SizedBox(
@@ -1104,10 +1151,10 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                 ),
                               )
-                            : const Text(
+                            : Text(
                                 'Submit',
                                 style: TextStyle(
-                                  fontSize: 16,
+                                  fontSize: isMobile ? 16 : 18,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -1115,6 +1162,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                     ),
                   ],
                 ),
+          ),
         ),
       ],
     );
