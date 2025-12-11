@@ -149,6 +149,9 @@ class AllWalletReportsService {
       if (response['success'] == true && response['report'] != null) {
         final report = response['report'] as Map<String, dynamic>;
         
+        // Extract transactions array if available
+        final transactions = response['transactions'] as List<dynamic>? ?? [];
+        
         print('═══════════════════════════════════════════════════════════');
         print('✅ [ALL WALLET REPORTS] Frontend: API Response Received');
         print('   success: true');
@@ -156,7 +159,13 @@ class AllWalletReportsService {
         print('     - cashIn: ${report['cashIn'] ?? 0}');
         print('     - cashOut: ${report['cashOut'] ?? 0}');
         print('     - balance: ${report['balance'] ?? 0}');
+        print('     - addAmountCount: ${report['addAmountCount'] ?? 0}');
+        print('     - addAmountTotal: ${report['addAmountTotal'] ?? 0}');
+        print('     - withdrawCount: ${report['withdrawCount'] ?? 0}');
+        print('     - withdrawTotal: ${report['withdrawTotal'] ?? 0}');
         print('   userCount: ${response['userCount'] ?? 0}');
+        print('   transactionCount: ${response['transactionCount'] ?? 0}');
+        print('   transactions: ${transactions.length} entries');
         print('   filters: ${response['filters'] ?? 'null'}');
         print('   lastUpdated: ${response['lastUpdated'] ?? 'null'}');
         print('═══════════════════════════════════════════════════════════');
@@ -167,7 +176,12 @@ class AllWalletReportsService {
             'cashIn': (report['cashIn'] ?? 0.0).toDouble(),
             'cashOut': (report['cashOut'] ?? 0.0).toDouble(),
             'balance': (report['balance'] ?? 0.0).toDouble(),
+            'addAmountCount': (report['addAmountCount'] ?? 0),
+            'addAmountTotal': (report['addAmountTotal'] ?? 0.0).toDouble(),
+            'withdrawCount': (report['withdrawCount'] ?? 0),
+            'withdrawTotal': (report['withdrawTotal'] ?? 0.0).toDouble(),
           },
+          'transactions': transactions,
           'filters': {
             'userId': response['filters']?['userId'] ?? queryParams['userId'],
             'userIds': finalUserIds,
@@ -175,6 +189,7 @@ class AllWalletReportsService {
             'endDate': response['filters']?['endDate'] ?? endDate?.toIso8601String(),
           },
           'userCount': response['userCount'] ?? 0,
+          'transactionCount': response['transactionCount'] ?? 0,
           'lastUpdated': response['lastUpdated'] ?? DateTime.now().toIso8601String(),
         };
       }

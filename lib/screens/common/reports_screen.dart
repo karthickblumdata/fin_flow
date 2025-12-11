@@ -13,6 +13,7 @@ import '../../services/report_service.dart';
 import '../../services/user_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/socket_service.dart';
+import '../../services/payment_mode_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
@@ -38,7 +39,7 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
   String? _selectedInitiatedBy;
   String? _selectedTransferTo;
   String? _selectedPurpose;
-  String? _selectedMode;
+  String? _selectedMode; // Now stores paymentModeId or 'All'
   String? _selectedType;
   String? _selectedCollectionType;
   String? _selectedStatus;
@@ -51,6 +52,7 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
   List<Map<String, dynamic>> _allTransactions = [];
   List<Map<String, dynamic>> _users = [];
   List<Map<String, dynamic>> _expenseTypes = []; // NEW: Expense types list
+  List<Map<String, dynamic>> _paymentModes = []; // Payment modes for dropdown
   
   // Summary data
   double _totalInflow = 0.0;
@@ -81,6 +83,7 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
     _loadData();
     _loadUsers();
     _loadExpenseTypes(); // NEW: Load expense types
+    _loadPaymentModes(); // Load payment modes for dropdown
     _setupSocketListeners();
     _loadSavedReports();
   }
@@ -209,6 +212,22 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
     }
   }
 
+  /// Load payment modes for dropdown filter
+  Future<void> _loadPaymentModes() async {
+    try {
+      final result = await PaymentModeService.getPaymentModes();
+      if (result['success'] == true && mounted) {
+        setState(() {
+          _paymentModes = (result['paymentModes'] as List<dynamic>? ?? [])
+              .map((pm) => Map<String, dynamic>.from(pm))
+              .toList();
+        });
+      }
+    } catch (e) {
+      // Handle error silently
+    }
+  }
+
   Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
@@ -224,10 +243,16 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
           : null;
 
       // Use unified report endpoint
+      // Convert paymentMode name to filter (backend accepts modeName for filtering)
+      String? modeFilter;
+      if (_selectedMode != null && _selectedMode != 'All') {
+        modeFilter = _selectedMode; // Backend will filter by paymentMode name
+      }
+      
       final reportResult = await ReportService.getReports(
         startDate: fromDateStr,
         endDate: toDateStr,
-        mode: _selectedMode == 'All' || _selectedMode == null ? null : _selectedMode,
+        mode: modeFilter,
         status: _selectedStatus == 'All' || _selectedStatus == null ? null : _selectedStatus,
         category: _selectedCategory == 'All' || _selectedCategory == null ? null : _selectedCategory,
       );
@@ -458,7 +483,8 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
       'description': tx['purpose'] ?? 'N/A',
       'type': 'Transfer',
       'collectionType': null,
-      'mode': tx['mode'] ?? 'Unknown',
+      'mode': tx['mode'],
+      'paymentMode': tx['paymentMode'],
       'amount': '₹${_formatAmount((tx['amount'] ?? 0).toDouble())}',
       'amountValue': (tx['amount'] ?? 0).toDouble(),
       'status': tx['status'] ?? 'Pending',
@@ -508,8 +534,13 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
       'purpose': col['customerName'] ?? col['description'] ?? 'N/A',
       'description': col['description'] ?? col['customerName'] ?? 'N/A',
       'type': 'Collection',
-      'collectionType': col['paymentMode']?['autoPay'] == true ? 'Auto' : (col['mode'] == 'Cash' ? 'Cash' : 'UPI-Bank'),
-      'mode': col['mode'] ?? 'Unknown',
+      'collectionType': col['paymentMode']?['autoPay'] == true 
+          ? 'Auto' 
+          : (col['paymentMode']?['modeName'] != null 
+              ? col['paymentMode']['modeName'] 
+              : (col['mode'] == 'Cash' ? 'Cash' : 'UPI-Bank')),
+      'mode': col['mode'],
+      'paymentMode': col['paymentMode'],
       'amount': '₹${_formatAmount((col['amount'] ?? 0).toDouble())}',
       'amountValue': (col['amount'] ?? 0).toDouble(),
       'status': col['status'] ?? 'Pending',
@@ -542,7 +573,8 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
       'type': 'Expense',
       'category': exp['category'] ?? 'N/A', // NEW: Include category
       'collectionType': null,
-      'mode': exp['mode'] ?? 'Unknown',
+      'mode': exp['mode'],
+      'paymentMode': exp['paymentMode'],
       'amount': '₹${_formatAmount((exp['amount'] ?? 0).toDouble())}',
       'amountValue': (exp['amount'] ?? 0).toDouble(),
       'status': exp['status'] ?? 'Pending',
@@ -802,11 +834,13 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
         }
       }
 
-      // Mode filter
-      if (_selectedMode != null) {
-        if (_selectedMode == 'All') {
-          // Show all if "All" is selected
-        } else if (transaction['mode'] != _selectedMode) {
+      // Mode filter - now filters by paymentMode name
+      if (_selectedMode != null && _selectedMode != 'All') {
+        // Filter by paymentMode name (since _selectedMode now stores paymentMode name)
+        final paymentModeName = transaction['paymentMode'] != null && transaction['paymentMode'] is Map
+            ? transaction['paymentMode']['modeName']?.toString()
+            : null;
+        if (paymentModeName != _selectedMode) {
           return false;
         }
       }
@@ -867,7 +901,17 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
     return options;
   }
   final List<String> _purposeOptions = ['All', 'Customer Payment', 'Travel Advance', 'Office Supplies', 'Salary', 'Other'];
-  final List<String> _modes = ['All', 'Cash', 'UPI', 'Bank'];
+  // Payment modes are now loaded dynamically from API
+  List<String> get _modes {
+    final options = ['All'];
+    for (var pm in _paymentModes) {
+      final modeName = pm['modeName'] as String?;
+      if (modeName != null && modeName.isNotEmpty) {
+        options.add(modeName);
+      }
+    }
+    return options;
+  }
   final List<String> _types = ['All', 'Transfer', 'Collection', 'Expense'];
   final List<String> _collectionTypes = ['All', 'Cash', 'UPI-Bank', 'Auto'];
   final List<String> _statuses = ['All', 'Approved', 'Pending', 'Rejected'];
@@ -1466,7 +1510,7 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
                     _buildHeaderCell('Purpose', 130),
                     _buildHeaderCell('Type', 100),
                     _buildHeaderCell('Collection Type', 120),
-                    _buildHeaderCell('Mode', 120, isLast: true),
+                    _buildHeaderCell('Payment Mode', 120, isLast: true),
                   ],
                 ),
               ),
@@ -1505,7 +1549,13 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
                           _buildDataCell(transaction['purpose'].toString(), 130),
                           _buildDataCell(transaction['type'].toString(), 100),
                           _buildDataCell(transaction['collectionType']?.toString() ?? 'N/A', 120),
-                          _buildDataCell(transaction['mode'].toString(), 120, isLast: true),
+                          _buildDataCell(
+                            (transaction['paymentMode'] != null && transaction['paymentMode'] is Map && transaction['paymentMode']['modeName'] != null)
+                                ? transaction['paymentMode']['modeName'].toString()
+                                : '',
+                            120,
+                            isLast: true,
+                          ),
                         ],
                       ),
                     );
@@ -1562,7 +1612,10 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
                 _buildMobileDetailRow('Purpose', transaction['purpose'].toString()),
                 _buildMobileDetailRow('Type', transaction['type'].toString()),
                 _buildMobileDetailRow('Collection Type', transaction['collectionType']?.toString() ?? 'N/A'),
-                _buildMobileDetailRow('Mode', transaction['mode'].toString()),
+                _buildMobileDetailRow('Payment Mode', 
+                  (transaction['paymentMode'] != null && transaction['paymentMode'] is Map && transaction['paymentMode']['modeName'] != null)
+                      ? transaction['paymentMode']['modeName'].toString()
+                      : ''),
                 _buildMobileDetailRow('Auto Pay', transaction['autoPay'] == true ? 'Yes' : 'No'),
                 _buildMobileDetailRow('Created By', transaction['createdBy'].toString()),
                 _buildMobileDetailRow('Description', transaction['description']?.toString() ?? transaction['purpose'].toString()),
@@ -1825,7 +1878,9 @@ class _ReportsScreenContentState extends State<_ReportsScreenContent> {
         '"${tx['purpose'] ?? ''}"',
         tx['type'] ?? '',
         tx['collectionType'] ?? 'N/A',
-        tx['mode'] ?? '',
+        (tx['paymentMode'] != null && tx['paymentMode'] is Map && tx['paymentMode']['modeName'] != null)
+            ? tx['paymentMode']['modeName'].toString()
+            : '',
         tx['amountValue'] ?? 0,
         tx['status'] ?? '',
       ].join(','));
