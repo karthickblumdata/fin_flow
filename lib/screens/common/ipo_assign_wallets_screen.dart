@@ -108,14 +108,18 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
   Future<Map<String, int>> _getAssignmentCounts(String userId) async {
     try {
       // Get collections where user is assigned receiver (assigned to)
+      // This counts collections where money is assigned TO this user
       final assignedToResult = await CollectionService.getCollections(
         assignedReceiver: userId,
       );
       final assignedToCount = (assignedToResult['collections'] as List<dynamic>?)?.length ?? 0;
       
-      // Get collections where user is collector (assigned for)
+      // Get collections where user is assigned receiver (assigned for)
+      // "Assigned for" means collections where someone collected money FOR this user
+      // This counts all collections where assignedReceiver = this user
+      // When User1 collects FOR Super Admin, this count increases
       final assignedForResult = await CollectionService.getCollections(
-        collectedBy: userId,
+        assignedReceiver: userId,
       );
       final assignedForCount = (assignedForResult['collections'] as List<dynamic>?)?.length ?? 0;
       
@@ -508,9 +512,36 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
                                 label: 'Assigned to: ${user['assignedToCount'] ?? 0}',
                               ),
                               const SizedBox(height: 4),
-                              _buildContactLine(
-                                icon: Icons.badge_outlined,
-                                label: 'Assigned for: ${user['assignedForCount'] ?? 0}',
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.badge_outlined,
+                                    size: 14,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Assigned for: ',
+                                    style: AppTheme.bodySmall.copyWith(
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '${user['assignedForCount'] ?? 0}',
+                                      style: AppTheme.bodySmall.copyWith(
+                                        color: AppTheme.primaryColor,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           )
@@ -525,9 +556,37 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
                                 ),
                               ),
                               Flexible(
-                                child: _buildContactLine(
-                                  icon: Icons.badge_outlined,
-                                  label: 'Assigned for: ${user['assignedForCount'] ?? 0}',
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.badge_outlined,
+                                      size: 14,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Assigned for: ',
+                                      style: AppTheme.bodySmall.copyWith(
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        '${user['assignedForCount'] ?? 0}',
+                                        style: AppTheme.bodySmall.copyWith(
+                                          color: AppTheme.primaryColor,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -1149,6 +1208,22 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${_filteredAssignedForUsers.length}',
+                        style: AppTheme.bodySmall.copyWith(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1425,6 +1500,22 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                         style: AppTheme.headingSmall.copyWith(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_filteredAssignedForUsers.length}',
+                          style: AppTheme.bodySmall.copyWith(
+                            color: AppTheme.primaryColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
