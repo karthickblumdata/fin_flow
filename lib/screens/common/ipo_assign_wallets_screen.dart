@@ -4,6 +4,7 @@ import '../../theme/app_theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../services/wallet_service.dart';
+import '../../services/collection_service.dart';
 import '../../utils/responsive.dart';
 import '../../utils/profile_image_helper.dart';
 
@@ -60,12 +61,21 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
             ?.map((u) => u as Map<String, dynamic>)
             .toList() ?? [];
         
-        // Check wallet status for each user
+        // Check wallet status and assignment counts for each user
         for (var user in users) {
           final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
           if (userId.isNotEmpty) {
             final hasWallet = await WalletService.hasWallet(userId: userId);
             user['hasWallet'] = hasWallet;
+            
+            // Get assignment counts
+            final assignmentCounts = await _getAssignmentCounts(userId);
+            user['assignedToCount'] = assignmentCounts['assignedTo'] ?? 0;
+            user['assignedForCount'] = assignmentCounts['assignedFor'] ?? 0;
+          } else {
+            // Default to 0 if no userId
+            user['assignedToCount'] = 0;
+            user['assignedForCount'] = 0;
           }
         }
         
@@ -92,6 +102,34 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
         });
         _filterUsers();
       }
+    }
+  }
+
+  Future<Map<String, int>> _getAssignmentCounts(String userId) async {
+    try {
+      // Get collections where user is assigned receiver (assigned to)
+      final assignedToResult = await CollectionService.getCollections(
+        assignedReceiver: userId,
+      );
+      final assignedToCount = (assignedToResult['collections'] as List<dynamic>?)?.length ?? 0;
+      
+      // Get collections where user is collector (assigned for)
+      final assignedForResult = await CollectionService.getCollections(
+        collectedBy: userId,
+      );
+      final assignedForCount = (assignedForResult['collections'] as List<dynamic>?)?.length ?? 0;
+      
+      return {
+        'assignedTo': assignedToCount,
+        'assignedFor': assignedForCount,
+      };
+    } catch (e) {
+      print('❌ [ASSIGN WALLETS] Error fetching assignment counts for user $userId: $e');
+      // Return default values on error
+      return {
+        'assignedTo': 0,
+        'assignedFor': 0,
+      };
     }
   }
 
@@ -466,13 +504,13 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildContactLine(
-                                icon: Icons.badge_outlined,
-                                label: 'Assigned for:',
+                                icon: Icons.person_outline,
+                                label: 'Assigned to: ${user['assignedToCount'] ?? 0}',
                               ),
                               const SizedBox(height: 4),
                               _buildContactLine(
-                                icon: Icons.person_outline,
-                                label: 'Assigned to:',
+                                icon: Icons.badge_outlined,
+                                label: 'Assigned for: ${user['assignedForCount'] ?? 0}',
                               ),
                             ],
                           )
@@ -482,14 +520,14 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
                             children: [
                               Flexible(
                                 child: _buildContactLine(
-                                  icon: Icons.badge_outlined,
-                                  label: 'Assigned for:',
+                                  icon: Icons.person_outline,
+                                  label: 'Assigned to: ${user['assignedToCount'] ?? 0}',
                                 ),
                               ),
                               Flexible(
                                 child: _buildContactLine(
-                                  icon: Icons.person_outline,
-                                  label: 'Assigned to:',
+                                  icon: Icons.badge_outlined,
+                                  label: 'Assigned for: ${user['assignedForCount'] ?? 0}',
                                 ),
                               ),
                             ],
