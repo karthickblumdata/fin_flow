@@ -623,6 +623,10 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
         initialImageUrl: imageUrl,
         allUsers: _users,
         isMobile: isMobile,
+        onSaved: () {
+          // Refresh users list after saving
+          _loadUsers();
+        },
       ),
     );
   }
@@ -853,6 +857,7 @@ class _AssignmentDialogContent extends StatefulWidget {
   final String? initialImageUrl;
   final List<Map<String, dynamic>> allUsers;
   final bool isMobile;
+  final VoidCallback? onSaved; // Callback to refresh parent screen
 
   const _AssignmentDialogContent({
     required this.initialUser,
@@ -863,6 +868,7 @@ class _AssignmentDialogContent extends StatefulWidget {
     required this.initialImageUrl,
     required this.allUsers,
     required this.isMobile,
+    this.onSaved,
   });
 
   @override
@@ -880,6 +886,9 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
   List<Map<String, dynamic>> _filteredAssignedForUsers = [];
   List<Map<String, dynamic>> _activeUsers = [];
   final GlobalKey _dropdownButtonKey = GlobalKey();
+  Set<String> _selectedUserIds = {}; // Track selected user IDs
+  List<Map<String, dynamic>> _assignedToUsers = []; // Users who assigned this user
+  
 
   @override
   void initState() {
@@ -891,7 +900,162 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
     _selectedRoleColor = widget.initialRoleColor;
     _selectedImageUrl = widget.initialImageUrl;
     _assignedForSearchController.addListener(_filterAssignedForUsers);
+    
+    // Try to load from initial user data first
+    _loadAssignedToFromInitialUser();
     _loadActiveUsers();
+    // Then refresh from API
+    _loadAssignedToUsers();
+  }
+  
+  void _loadAssignedToFromInitialUser() {
+    try {
+      // Check if initial user already has assignedBy data
+      final assignedBy = (widget.initialUser['assignedBy'] as List<dynamic>?) ?? [];
+      if (assignedBy.isNotEmpty) {
+        print('✅ [ASSIGN WALLETS] Found assignedBy in initial user data: ${assignedBy.length}');
+        final assignedByUsers = assignedBy.map((ab) {
+          if (ab is Map<String, dynamic>) {
+            return <String, dynamic>{
+              'id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
+              '_id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
+              'name': ab['name']?.toString() ?? 'Unknown',
+              'email': ab['email']?.toString() ?? '',
+              'role': ab['role']?.toString() ?? '',
+            };
+          }
+          return <String, dynamic>{};
+        }).where((u) => u.isNotEmpty && (u['id']?.toString().isNotEmpty == true)).toList();
+        
+        // Also check assignedUsers
+        final assignedUsers = (widget.initialUser['assignedUsers'] as List<dynamic>?) ?? [];
+        final assignedUserIds = assignedUsers.map((au) {
+          if (au is Map<String, dynamic>) {
+            return au['_id']?.toString() ?? au['id']?.toString() ?? '';
+          }
+          return au.toString();
+        }).where((id) => id.isNotEmpty).toSet();
+        
+        setState(() {
+          _assignedToUsers = assignedByUsers;
+          _selectedUserIds = assignedUserIds;
+        });
+        
+        print('✅ [ASSIGN WALLETS] Loaded ${_assignedToUsers.length} assignedBy users from initial data');
+      }
+    } catch (e) {
+      print('⚠️ [ASSIGN WALLETS] Error loading from initial user: $e');
+    }
+  }
+  
+  Future<void> _loadAssignedToUsers() async {
+    try {
+      final selectedUserId = _selectedUser['_id']?.toString() ?? _selectedUser['id']?.toString() ?? '';
+      if (selectedUserId.isEmpty) {
+        print('⚠️ [ASSIGN WALLETS] Selected user ID is empty');
+        return;
+      }
+      
+      print('🔍 [ASSIGN WALLETS] Loading assigned to users for: $selectedUserId');
+      
+      // Get user data with assignedBy populated
+      final result = await UserService.getUsers();
+      if (result['success'] == true) {
+        final users = (result['users'] as List<dynamic>?)?.map((u) => u as Map<String, dynamic>).toList() ?? [];
+        
+        // Find current user
+        final currentUser = users.firstWhere(
+          (u) {
+            final userId = u['_id']?.toString() ?? u['id']?.toString() ?? '';
+            return userId == selectedUserId;
+          },
+          orElse: () => <String, dynamic>{},
+        );
+        
+        if (currentUser.isEmpty) {
+          print('⚠️ [ASSIGN WALLETS] Current user not found in users list');
+          return;
+        }
+        
+        print('✅ [ASSIGN WALLETS] Found current user: ${currentUser['name']}');
+        print('   Current user ID: ${currentUser['_id'] ?? currentUser['id']}');
+        print('   assignedBy field: ${currentUser['assignedBy']}');
+        print('   assignedBy is null: ${currentUser['assignedBy'] == null}');
+        print('   assignedBy is empty list: ${currentUser['assignedBy'] is List && (currentUser['assignedBy'] as List).isEmpty}');
+        print('   assignedBy type: ${currentUser['assignedBy']?.runtimeType}');
+        print('   All current user keys: ${currentUser.keys.toList()}');
+        
+        // Get assignedBy - should be populated objects from backend
+        final assignedBy = (currentUser['assignedBy'] as List<dynamic>?) ?? [];
+        print('   assignedBy count: ${assignedBy.length}');
+        
+        if (assignedBy.isEmpty && currentUser.containsKey('assignedBy')) {
+          print('   ⚠️ assignedBy field exists but is empty or null');
+        }
+        if (!currentUser.containsKey('assignedBy')) {
+          print('   ⚠️ assignedBy field does not exist in user object');
+        }
+        
+        final assignedByUsers = <Map<String, dynamic>>[];
+        for (final ab in assignedBy) {
+          if (ab is Map<String, dynamic>) {
+            // Already populated object from backend
+            final userMap = <String, dynamic>{
+              'id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
+              '_id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
+              'name': ab['name']?.toString() ?? 'Unknown',
+              'email': ab['email']?.toString() ?? '',
+              'role': ab['role']?.toString() ?? '',
+            };
+            if (userMap['id']?.toString().isNotEmpty == true) {
+              assignedByUsers.add(userMap);
+              print('   ✅ Added assignedBy user: ${userMap['name']} (${userMap['id']})');
+            }
+          } else if (ab != null) {
+            // ObjectId string - find user in users list
+            final abId = ab.toString();
+            final foundUser = users.firstWhere(
+              (u) {
+                final userId = u['_id']?.toString() ?? u['id']?.toString() ?? '';
+                return userId == abId;
+              },
+              orElse: () => <String, dynamic>{},
+            );
+            if (foundUser.isNotEmpty) {
+              assignedByUsers.add(foundUser);
+              print('   ✅ Found and added assignedBy user: ${foundUser['name']}');
+            } else {
+              print('   ⚠️ Could not find user with ID: $abId');
+            }
+          }
+        }
+        
+        print('   Final assignedByUsers count: ${assignedByUsers.length}');
+        
+        // Also load existing assigned users
+        final assignedUsers = (currentUser['assignedUsers'] as List<dynamic>?) ?? [];
+        final assignedUserIds = assignedUsers.map((au) {
+          if (au is Map<String, dynamic>) {
+            return au['_id']?.toString() ?? au['id']?.toString() ?? '';
+          }
+          return au.toString();
+        }).where((id) => id.isNotEmpty).toSet();
+        
+        print('   Existing assignedUsers count: ${assignedUserIds.length}');
+        
+        setState(() {
+          _assignedToUsers = assignedByUsers;
+          _selectedUserIds = assignedUserIds;
+        });
+        
+        print('✅ [ASSIGN WALLETS] Updated state with ${_assignedToUsers.length} assignedBy users');
+      } else {
+        print('❌ [ASSIGN WALLETS] Failed to get users: ${result['message']}');
+      }
+    } catch (e, stackTrace) {
+      print('❌ [ASSIGN WALLETS] Error loading assigned to users: $e');
+      print('   Stack trace: $stackTrace');
+    }
   }
 
   @override
@@ -925,6 +1089,122 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
             role.contains(query);
       }).toList();
     });
+  }
+
+  Future<void> _saveAssignments(BuildContext context) async {
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+    
+    try {
+      final selectedUserId = _selectedUser['_id']?.toString() ?? _selectedUser['id']?.toString() ?? '';
+      
+      // Save user assignments (assigned for)
+      if (_selectedUserIds.isNotEmpty && selectedUserId.isNotEmpty) {
+        final assignedUserIdsList = _selectedUserIds.toList();
+        final assignmentResult = await UserService.updateUserAssignments(
+          userId: selectedUserId,
+          assignedUserIds: assignedUserIdsList,
+        );
+        
+        if (assignmentResult['success'] != true) {
+          if (context.mounted) {
+            Navigator.of(context).pop(); // Close loading
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        assignmentResult['message'] ?? 'Failed to update assignments',
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: AppTheme.errorColor,
+                duration: const Duration(seconds: 3),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      }
+      
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading
+        Navigator.of(context).pop(); // Close dialog
+        
+        // Refresh parent screen to reload user data
+        widget.onSaved?.call();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Successfully assigned ${_selectedUserIds.length} user(s) for $_selectedUserName',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppTheme.secondaryColor,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Error saving: ${e.toString()}',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Color _getRoleColor(String role) {
@@ -965,6 +1245,8 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
     _loadActiveUsers();
     // Clear search when user changes
     _assignedForSearchController.clear();
+    // Reload assigned to users for the new user
+    _loadAssignedToUsers();
   }
 
   void _showUserDropdown(BuildContext context, GlobalKey buttonKey) {
@@ -1173,17 +1455,116 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Container(
-                  height: 80,
-                  alignment: Alignment.center,
-                  child: Text(
-                    'No assignments',
-                    style: AppTheme.bodyMedium.copyWith(
-                      color: AppTheme.textSecondary,
-                      fontSize: 14,
+                // Debug info (can be removed later)
+                if (_assignedToUsers.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warningColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppTheme.warningColor.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: AppTheme.warningColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Debug: Check console for assignedBy data',
+                            style: AppTheme.bodySmall.copyWith(
+                              color: AppTheme.warningColor,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                _assignedToUsers.isEmpty
+                    ? Container(
+                        height: 80,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'No assignments',
+                          style: AppTheme.bodyMedium.copyWith(
+                            color: AppTheme.textSecondary,
+                            fontSize: 14,
+                          ),
+                        ),
+                      )
+                    : ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.3,
+                        ),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _assignedToUsers.length,
+                          itemBuilder: (context, index) {
+                            final user = _assignedToUsers[index];
+                            final userName = user['name']?.toString() ?? 'Unknown';
+                            final userEmail = user['email']?.toString() ?? '';
+                            final userRole = user['role']?.toString() ?? '';
+                            final roleColor = _getRoleColor(userRole);
+                            
+                            return ListTile(
+                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              leading: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: roleColor.withValues(alpha: 0.2),
+                                child: Text(
+                                  userName.isNotEmpty
+                                      ? userName.substring(0, 1).toUpperCase()
+                                      : '?',
+                                  style: TextStyle(
+                                    color: roleColor,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                userName,
+                                style: AppTheme.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                userEmail,
+                                style: AppTheme.bodySmall.copyWith(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: Text(
+                                userRole,
+                                style: AppTheme.bodySmall.copyWith(
+                                  color: roleColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
               ],
             ),
           ),
@@ -1216,7 +1597,7 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '${_filteredAssignedForUsers.length}',
+                        '${_selectedUserIds.length}',
                         style: AppTheme.bodySmall.copyWith(
                           color: AppTheme.primaryColor,
                           fontWeight: FontWeight.w700,
@@ -1224,6 +1605,24 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                         ),
                       ),
                     ),
+                    if (_assignedToUsers.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.secondaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Assigned by: ${_assignedToUsers.length}',
+                          style: AppTheme.bodySmall.copyWith(
+                            color: AppTheme.secondaryColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1291,6 +1690,8 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                             final userEmail = user['email']?.toString() ?? '';
                             final userRole = user['role']?.toString() ?? '';
                             final roleColor = _getRoleColor(userRole);
+                            final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+                            final isSelected = _selectedUserIds.contains(userId);
                             
                             return ListTile(
                               dense: true,
@@ -1330,22 +1731,47 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              trailing: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: MediaQuery.of(context).size.width * 0.25,
-                                ),
-                                child: Text(
-                                  userRole,
-                                  style: AppTheme.bodySmall.copyWith(
-                                    color: roleColor,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      userRole,
+                                      style: AppTheme.bodySmall.copyWith(
+                                        color: roleColor,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.end,
+                                    ),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.end,
-                                ),
+                                  const SizedBox(width: 8),
+                                  Checkbox(
+                                    value: isSelected,
+                                    onChanged: (value) {
+                                      setState(() {
+                                        if (value == true) {
+                                          _selectedUserIds.add(userId);
+                                        } else {
+                                          _selectedUserIds.remove(userId);
+                                        }
+                                      });
+                                    },
+                                    activeColor: AppTheme.primaryColor,
+                                  ),
+                                ],
                               ),
+                              onTap: () {
+                                setState(() {
+                                  if (isSelected) {
+                                    _selectedUserIds.remove(userId);
+                                  } else {
+                                    _selectedUserIds.add(userId);
+                                  }
+                                });
+                              },
                             );
                           },
                         ),
@@ -1383,10 +1809,7 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () {
-                          // TODO: Implement save functionality
-                          Navigator.of(context).pop();
-                        },
+                        onPressed: () => _saveAssignments(context),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryColor,
                           padding: const EdgeInsets.symmetric(
@@ -1461,81 +1884,19 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                   const SizedBox(height: 16),
                   // Content for assigned to
                   Expanded(
-                    child: Center(
-                      child: Text(
-                        'No assignments',
-                        style: AppTheme.bodyMedium.copyWith(
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Right side - Assigned for
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: const BorderRadius.only(
-                  bottomRight: Radius.circular(20),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.badge_outlined,
-                        size: 20,
-                        color: AppTheme.primaryColor,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Assigned for',
-                        style: AppTheme.headingSmall.copyWith(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${_filteredAssignedForUsers.length}',
-                          style: AppTheme.bodySmall.copyWith(
-                            color: AppTheme.primaryColor,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Active user list
-                  Expanded(
-                    child: _filteredAssignedForUsers.isEmpty
+                    child: _assignedToUsers.isEmpty
                         ? Center(
                             child: Text(
-                              'No active users',
+                              'No assignments',
                               style: AppTheme.bodyMedium.copyWith(
                                 color: AppTheme.textSecondary,
                               ),
                             ),
                           )
                         : ListView.builder(
-                            itemCount: _filteredAssignedForUsers.length,
+                            itemCount: _assignedToUsers.length,
                             itemBuilder: (context, index) {
-                              final user = _filteredAssignedForUsers[index];
+                              final user = _assignedToUsers[index];
                               final userName = user['name']?.toString() ?? 'Unknown';
                               final userEmail = user['email']?.toString() ?? '';
                               final userRole = user['role']?.toString() ?? '';
@@ -1582,6 +1943,153 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Right side - Assigned for
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.only(
+                  bottomRight: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.badge_outlined,
+                        size: 20,
+                        color: AppTheme.primaryColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Assigned for',
+                        style: AppTheme.headingSmall.copyWith(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_selectedUserIds.length}',
+                          style: AppTheme.bodySmall.copyWith(
+                            color: AppTheme.primaryColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Active user list
+                  Expanded(
+                    child: _filteredAssignedForUsers.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No active users',
+                              style: AppTheme.bodyMedium.copyWith(
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _filteredAssignedForUsers.length,
+                            itemBuilder: (context, index) {
+                              final user = _filteredAssignedForUsers[index];
+                              final userName = user['name']?.toString() ?? 'Unknown';
+                              final userEmail = user['email']?.toString() ?? '';
+                              final userRole = user['role']?.toString() ?? '';
+                              final roleColor = _getRoleColor(userRole);
+                              
+                              final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+                              final isSelected = _selectedUserIds.contains(userId);
+                              
+                              return ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                leading: CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: roleColor.withValues(alpha: 0.2),
+                                  child: Text(
+                                    userName.isNotEmpty
+                                        ? userName.substring(0, 1).toUpperCase()
+                                        : '?',
+                                    style: TextStyle(
+                                      color: roleColor,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                title: Text(
+                                  userName,
+                                  style: AppTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  userEmail,
+                                  style: AppTheme.bodySmall.copyWith(
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      userRole,
+                                      style: AppTheme.bodySmall.copyWith(
+                                        color: roleColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Checkbox(
+                                      value: isSelected,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          if (value == true) {
+                                            _selectedUserIds.add(userId);
+                                          } else {
+                                            _selectedUserIds.remove(userId);
+                                          }
+                                        });
+                                      },
+                                      activeColor: AppTheme.primaryColor,
+                                    ),
+                                  ],
+                                ),
+                                onTap: () {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedUserIds.remove(userId);
+                                    } else {
+                                      _selectedUserIds.add(userId);
+                                    }
+                                  });
+                                },
                               );
                             },
                           ),
@@ -1653,10 +2161,7 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                       ),
                       const SizedBox(width: 12),
                       ElevatedButton(
-                        onPressed: () {
-                          // TODO: Implement save functionality
-                          Navigator.of(context).pop();
-                        },
+                        onPressed: () => _saveAssignments(context),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryColor,
                           padding: const EdgeInsets.symmetric(

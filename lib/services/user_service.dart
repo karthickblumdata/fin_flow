@@ -129,4 +129,72 @@ class UserService {
       };
     }
   }
+
+  /// Update user permissions (SuperAdmin or user with assign permission)
+  /// [permissions] - List of permission IDs to assign to the user
+  static Future<Map<String, dynamic>> updateUserPermissions({
+    required String userId,
+    required List<String> permissions,
+  }) async {
+    try {
+      final response = await ApiService.put(
+        ApiConstants.updateUserPermissions(userId),
+        {
+          'userSpecificPermissions': permissions,
+        },
+      );
+
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'message': response['message'] ?? 'User permissions updated successfully',
+          'user': response['user'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? 'Failed to update user permissions',
+          'missingPermissions': response['missingPermissions'] ?? [],
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString().replaceFirst('Exception: ', ''),
+      };
+    }
+  }
+
+  /// Update user assignments (assigned users)
+  static Future<Map<String, dynamic>> updateUserAssignments({
+    required String userId,
+    required List<String> assignedUserIds,
+  }) async {
+    try {
+      final response = await ApiService.put(
+        ApiConstants.updateUserAssignments(userId),
+        {
+          'assignedUserIds': assignedUserIds,
+        },
+      );
+
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'message': response['message'] ?? 'User assignments updated successfully',
+          'user': response['user'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? 'Failed to update user assignments',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString().replaceFirst('Exception: ', ''),
+      };
+    }
+  }
 }

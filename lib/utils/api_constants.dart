@@ -45,6 +45,7 @@ class ApiConstants {
   // User permission endpoints
   static String getUserPermissions(String userId) => '/users/$userId/permissions';
   static String updateUserPermissions(String userId) => '/users/$userId/permissions';
+  static String updateUserAssignments(String userId) => '/users/$userId/assignments';
   static const String refreshCurrentUserPermissions = '/auth/me/permissions';
   
   // Wallet endpoints
