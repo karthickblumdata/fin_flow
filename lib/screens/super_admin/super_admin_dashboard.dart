@@ -550,6 +550,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   double _userBalance = 0.0;
   bool _isLoadingFinancialSummary = false;
   
+  // Flag to track if current data came from main API with date filters applied
+  // When true, skip client-side date filtering (API already filtered)
+  bool _isDataFromMainApiWithDateFilter = false;
+  
   // Status Cards
   Map<String, dynamic> _statusCounts = {
     'expenses': {
@@ -2907,6 +2911,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       if (!mounted) return;
     }
 
+    // Declare isAccountReports early so it's available throughout the function
+    final bool isAccountReports = _selectedItem == NavItem.accountReports;
+
     // Check cache first (unless force refresh)
     // For Self Wallet, we should invalidate cache when user changes or refresh
     // Include accountId in cache key if account filter is active
@@ -3637,9 +3644,19 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             
             // For Account Reports: If backend provided data, use it
             if (isAccountReports) {
+              // Check if date filters are active
+              final bool hasDateFilters = filterProvider.startDate != null || filterProvider.endDate != null;
+              
               if (data.isNotEmpty) {
                 debugPrint('📊 [ACCOUNT REPORTS] Using backend filtered data (${data.length} items)');
                 reportLoaded = true;
+              } else if (hasDateFilters) {
+                // When date filters are active, backend returns summary only
+                // Don't load detailed data separately because it won't have date filters
+                // Use account wallet values from API summary instead
+                debugPrint('📊 [ACCOUNT REPORTS] Wallet report API returned summary only with date filters active');
+                debugPrint('   Using account wallet values from API - NOT loading detailed data (would not match date filter)');
+                reportLoaded = true; // Mark as loaded to prevent detailed data loading
               } else {
                 debugPrint('📊 [ACCOUNT REPORTS] Wallet report API returned summary only - detailed data will be loaded separately');
                 reportLoaded = false;
@@ -4005,21 +4022,60 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             debugPrint('[SELF WALLET] 💰 Using default values: CashIn=$summaryCashIn, CashOut=$summaryCashOut, Balance=$summaryBalance');
           }
         } else if (summaryRaw != null && !isSelfWallet) {
-          // Fallback: Try to use summary if available (for backward compatibility)
-          print('📊 [ALL WALLET REPORTS] Using fallback parsing - summaryRaw is not null');
-          final summaryMap = summaryRaw is Map<String, dynamic>
-              ? Map<String, dynamic>.from(summaryRaw)
-              : (summaryRaw is Map
-                  ? Map<String, dynamic>.from(summaryRaw as Map)
-                  : <String, dynamic>{});
-          print('📊 [ALL WALLET REPORTS] Fallback summaryMap: $summaryMap');
-          if (summaryMap.isNotEmpty) {
-            summaryCashIn = _parseAmount(summaryMap['cashIn']);
-            summaryCashOut = _parseAmount(summaryMap['cashOut']);
-            summaryBalance = _parseAmount(summaryMap['balance']);
-            print('📊 [ALL WALLET REPORTS] Fallback parsed: cashIn=$summaryCashIn, cashOut=$summaryCashOut, balance=$summaryBalance');
+          // For Account Reports with account filter: Check if we have account wallet info first
+          // Account wallet info has correct values, summary might have 0 values
+          if (isAccountReports && _selectedAccountFilterId != null && _selectedAccountFilterId!.isNotEmpty && accountInfo != null) {
+            final accountMap = accountInfo is Map<String, dynamic>
+                ? Map<String, dynamic>.from(accountInfo)
+                : (accountInfo is Map
+                    ? Map<String, dynamic>.from(accountInfo as Map)
+                    : <String, dynamic>{});
+            
+            if (accountMap.isNotEmpty && accountMap['cashIn'] != null) {
+              // Use account wallet values instead of summary (which might be 0)
+              summaryCashIn = _parseAmount(accountMap['cashIn']);
+              summaryCashOut = _parseAmount(accountMap['cashOut']);
+              summaryBalance = _parseAmount(accountMap['totalBalance']);
+              print('📊 [ACCOUNT REPORTS] Using account wallet values instead of summary (account filter active):');
+              print('   Account: ${accountMap['modeName']}');
+              print('   Cash In: $summaryCashIn (from account wallet)');
+              print('   Cash Out: $summaryCashOut (from account wallet)');
+              print('   Balance: $summaryBalance (from account wallet)');
+            } else {
+              // Fallback to summary if account wallet not available
+              print('📊 [ALL WALLET REPORTS] Using fallback parsing - summaryRaw is not null');
+              final summaryMap = summaryRaw is Map<String, dynamic>
+                  ? Map<String, dynamic>.from(summaryRaw)
+                  : (summaryRaw is Map
+                      ? Map<String, dynamic>.from(summaryRaw as Map)
+                      : <String, dynamic>{});
+              print('📊 [ALL WALLET REPORTS] Fallback summaryMap: $summaryMap');
+              if (summaryMap.isNotEmpty) {
+                summaryCashIn = _parseAmount(summaryMap['cashIn']);
+                summaryCashOut = _parseAmount(summaryMap['cashOut']);
+                summaryBalance = _parseAmount(summaryMap['balance']);
+                print('📊 [ALL WALLET REPORTS] Fallback parsed: cashIn=$summaryCashIn, cashOut=$summaryCashOut, balance=$summaryBalance');
+              } else {
+                print('⚠️ [ALL WALLET REPORTS] Fallback summaryMap is empty!');
+              }
+            }
           } else {
-            print('⚠️ [ALL WALLET REPORTS] Fallback summaryMap is empty!');
+            // Fallback: Try to use summary if available (for backward compatibility)
+            print('📊 [ALL WALLET REPORTS] Using fallback parsing - summaryRaw is not null');
+            final summaryMap = summaryRaw is Map<String, dynamic>
+                ? Map<String, dynamic>.from(summaryRaw)
+                : (summaryRaw is Map
+                    ? Map<String, dynamic>.from(summaryRaw as Map)
+                    : <String, dynamic>{});
+            print('📊 [ALL WALLET REPORTS] Fallback summaryMap: $summaryMap');
+            if (summaryMap.isNotEmpty) {
+              summaryCashIn = _parseAmount(summaryMap['cashIn']);
+              summaryCashOut = _parseAmount(summaryMap['cashOut']);
+              summaryBalance = _parseAmount(summaryMap['balance']);
+              print('📊 [ALL WALLET REPORTS] Fallback parsed: cashIn=$summaryCashIn, cashOut=$summaryCashOut, balance=$summaryBalance');
+            } else {
+              print('⚠️ [ALL WALLET REPORTS] Fallback summaryMap is empty!');
+            }
           }
         } else if (!isSelfWallet) {
           print('⚠️ [ALL WALLET REPORTS] No data found! summaryRaw is null, isShowingAllUsers=$isShowingAllUsers, isShowingSpecificUser=$isShowingSpecificUser');
@@ -4916,7 +4972,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     // CRITICAL: For Self Wallet, if reportLoaded is true, skip detailed data fetch to prevent values from being overwritten
     final bool isExpenseReport = _selectedItem == NavItem.expenseReport;
     final bool isAllWalletReport = !isSelfWallet && _selectedItem == NavItem.walletOverview;
-    final bool isAccountReports = _selectedItem == NavItem.accountReports;
+    // isAccountReports is already declared at the beginning of the function
     
     // For Account Reports: Check if main API already returned data items
     // If main API returned data items, use them instead of loading detailed data separately
@@ -4948,9 +5004,16 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
 
     // For Account Reports: If main API returned data, use it instead of loading detailed data
     if (isAccountReports && mainApiHasData && mainApiData != null) {
+      // Check if date filters were active when main API was called
+      final bool hasDateFilters = _filterProvider.startDate != null || _filterProvider.endDate != null;
+      
       debugPrint('═══════════════════════════════════════════════════════════');
       debugPrint('📊 [ACCOUNT REPORTS] Using main API data (${mainApiData.length} items) instead of loading detailed data');
       debugPrint('   This prevents _allData from being empty when detailed APIs return 0 items');
+      if (hasDateFilters) {
+        debugPrint('   ⚠️  Date filters were active - API already filtered by date');
+        debugPrint('   Will skip client-side date filtering to prevent removing all items');
+      }
       debugPrint('═══════════════════════════════════════════════════════════');
       
       // Process main API data and add to _allData
@@ -4967,9 +5030,14 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       setState(() {
         _allData = processedData;
         _filteredData = processedData;
+        // Set flag to indicate data came from main API with date filters
+        _isDataFromMainApiWithDateFilter = hasDateFilters;
       });
       
       debugPrint('✅ [ACCOUNT REPORTS] Added ${processedData.length} items from main API to _allData');
+      if (hasDateFilters) {
+        debugPrint('   ✅ Flag set: _isDataFromMainApiWithDateFilter = true (will skip client-side date filtering)');
+      }
       return; // Skip detailed data loading
     }
 
@@ -5155,6 +5223,33 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         final bool hasAccountFilter = isAccountReports && _selectedAccountFilterId != null && _selectedAccountFilterId!.isNotEmpty;
         
         if (isAccountReports) {
+          // Check if date filters are active
+          final bool hasDateFilters = filterProvider.startDate != null || filterProvider.endDate != null;
+          
+          // If date filters are active AND account filter is active, we should NOT load detailed data
+          // because the detailed data APIs don't support date filters, and client-side filtering
+          // will remove all items that don't match the date range
+          if (hasAccountFilter && hasDateFilters) {
+            debugPrint('═══════════════════════════════════════════════════════════');
+            debugPrint('📊 [ACCOUNT REPORTS] ⚠️  SKIPPING detailed data loading:');
+            debugPrint('   Account filter: ${_selectedAccountFilterId ?? 'None (All Accounts)'}');
+            debugPrint('   Date filters: ${filterProvider.startDate} to ${filterProvider.endDate}');
+            debugPrint('   Reason: Detailed data APIs don\'t support date filters');
+            debugPrint('   Solution: Using account wallet values from main API summary');
+            debugPrint('   Note: Clearing _allData to prevent showing old data');
+            debugPrint('═══════════════════════════════════════════════════════════');
+            
+            // Clear _allData to prevent showing old data that doesn't match date filter
+            setState(() {
+              _allData = [];
+              _filteredData = [];
+              // Reset flag since we're not using main API data (skipping detailed data loading)
+              _isDataFromMainApiWithDateFilter = false;
+            });
+            
+            return; // Skip detailed data loading
+          }
+          
           debugPrint('═══════════════════════════════════════════════════════════');
           debugPrint('📊 [ACCOUNT REPORTS] Loading detailed data (expenses, collections, transactions)...');
           debugPrint('   Account filter: ${_selectedAccountFilterId ?? 'None (All Accounts)'}');
@@ -6982,6 +7077,24 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     return null;
   }
 
+  /// Extract payment mode name ONLY from paymentMode.modeName (no fallback to mode field)
+  /// Used specifically for All Wallet Report to show paymentModeID name
+  String? _extractPaymentModeNameOnly(dynamic item) {
+    if (item == null) return null;
+    
+    // Try nested paymentMode object ONLY
+    final paymentMode = item['paymentMode'];
+    if (paymentMode != null && paymentMode is Map) {
+      final modeName = paymentMode['modeName'] ?? paymentMode['name'] ?? paymentMode['displayName'];
+      if (modeName != null && modeName.toString().trim().isNotEmpty) {
+        return modeName.toString().trim();
+      }
+    }
+    
+    // NO FALLBACK to mode field - return null if paymentMode not found
+    return null;
+  }
+
   // Helper: Check if expense/item is approved (including Flagged with approvedBy)
   bool _isItemApproved(dynamic item) {
     final status = item['status']?.toString() ?? '';
@@ -7685,6 +7798,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       // Get FilterProvider for global filters
       final filterProvider = _filterProvider;
       
+      // Declare isAccountReports for use in filter logic
+      final bool isAccountReports = _selectedItem == NavItem.accountReports;
+      
       // ============================================================
       // LOG BEFORE FILTER VALUES (for Account Reports)
       // ============================================================
@@ -7830,9 +7946,40 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         // The API already filtered by accountId and excluded Entry 1 collections
         // Backend correctly excludes Entry 1 at database level, so API values are accurate
         // DO NOT recalculate from filtered data - it could cause double counting if Entry 1 slips through
+        
+        // Check if we have account wallet info from API (most reliable source)
+        final bool hasAccountWalletInfo = _accountInfoWithWallet != null;
         final bool hasApiSummaryValues = _cashIn != 0.0 || _cashOut != 0.0 || _balance != 0.0;
         
-        if (hasApiSummaryValues) {
+        // If we have account wallet info but values are 0, update from account wallet info
+        if (hasAccountWalletInfo && !hasApiSummaryValues) {
+          final walletCashIn = _parseAmount(_accountInfoWithWallet!['cashIn'] ?? 0);
+          final walletCashOut = _parseAmount(_accountInfoWithWallet!['cashOut'] ?? 0);
+          final walletBalance = _parseAmount(_accountInfoWithWallet!['totalBalance'] ?? 0);
+          
+          debugPrint('═══════════════════════════════════════════════════════════');
+          debugPrint('📊 [ACCOUNT REPORTS] Updating values from account wallet info:');
+          debugPrint('   Account ID: $_selectedAccountFilterId');
+          debugPrint('   Account Name: ${_accountInfoWithWallet!['modeName'] ?? 'Unknown'}');
+          debugPrint('   Cash In: $walletCashIn (from account wallet)');
+          debugPrint('   Cash Out: $walletCashOut (from account wallet)');
+          debugPrint('   Balance: $walletBalance (from account wallet)');
+          debugPrint('═══════════════════════════════════════════════════════════');
+          
+          if (mounted) {
+            setState(() {
+              _cashIn = walletCashIn;
+              _cashOut = walletCashOut;
+              _balance = walletBalance;
+              _userCashIn = walletCashIn;
+              _userCashOut = walletCashOut;
+              _userBalance = walletBalance;
+            });
+          }
+          return; // Don't recalculate - use API values
+        }
+        
+        if (hasApiSummaryValues || hasAccountWalletInfo) {
           // API has correct values (already filtered and Entry 1 excluded) - ALWAYS use them
           debugPrint('═══════════════════════════════════════════════════════════');
           debugPrint('📊 [ACCOUNT REPORTS] Using API summary totals (backend already filtered correctly):');
@@ -8334,9 +8481,14 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       // 1. The main API call (/api/wallet/report) filters by date, but returns summary only
       // 2. Detailed data loading (expenses/transactions) doesn't support date filters in their APIs
       // 3. So we must filter by date client-side for the detailed data
-      // Only skip if we're using data that was already filtered by the API (which we're not for detailed data)
-      final bool shouldSkipDateFilter = false; // Always apply date filter client-side for Account Reports detailed data
-      if ((filterProvider.startDate != null || filterProvider.endDate != null) && !shouldSkipDateFilter) {
+      // IMPORTANT: Skip client-side date filtering if data came from main API with date filters already applied
+      final bool shouldSkipDateFilter = isAccountReports && _isDataFromMainApiWithDateFilter;
+      if (shouldSkipDateFilter) {
+        debugPrint('📊 [ACCOUNT REPORTS] ⚠️  Skipping client-side date filter - data already filtered by main API');
+        debugPrint('   _isDataFromMainApiWithDateFilter: $_isDataFromMainApiWithDateFilter');
+        debugPrint('   Date range: ${filterProvider.startDate} to ${filterProvider.endDate}');
+        debugPrint('   Items count: ${filtered.length} (already filtered by API)');
+      } else if ((filterProvider.startDate != null || filterProvider.endDate != null)) {
         final beforeCount = filtered.length;
         if (_selectedItem == NavItem.walletSelf && beforeCount > 0) {
           debugPrint('🔍 [SELF WALLET] Date range filter - checking ${beforeCount} items');
@@ -8959,9 +9111,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       final type = _displayValue(item['type']).trim();
       final from = _displayValue(item['from']).trim();
       final to = _displayValue(item['to']).trim();
-      // Extract payment mode name (e.g., "ONLINE", "PAY CASH", "MONEY") instead of just payment method type (Cash, UPI, Bank)
-      // Same logic as My Wallet for consistency
-      final mode = (_extractPaymentModeName(item) ?? _displayValue(item['mode']) ?? 'Cash').trim();
+      // Extract payment mode name (e.g., "ONLINE", "PAY CASH", "MONEY") from paymentMode.modeName only (no fallback)
+      final mode = (_extractPaymentModeNameOnly(item) ?? 'Unknown').trim();
       final amountValue = _parseAmount(item['amount']);
       final approvedBy = _displayValue(item['approvedBy'] ?? item['approved_by']).trim();
       final status = _displayValue(item['status']).trim();
@@ -24283,10 +24434,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               return;
             }
             
-            // Prevent infinite loop: Don't reload if already loading
+            // Account changed - allow reload even if currently loading
+            // The forceRefresh flag will handle canceling/overriding current load
             if (_isLoadingFinancialData || _isInitializingAccountReports) {
-              debugPrint('⚠️  [ACCOUNT REPORTS] Already loading, skipping reload');
-              return;
+              debugPrint('⚠️  [ACCOUNT REPORTS] Account changed while loading - will reload with new account');
+              debugPrint('   Previous account: $normalizedSelectedId');
+              debugPrint('   New account: $normalizedAccountId');
+              // Don't return - continue to reload with new account
             }
             
             final accountName = normalizedAccountId != null
@@ -24312,9 +24466,40 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             setState(() {
               _selectedAccountFilterId = accountIdToUse; // Store normalized and trimmed value (null for "All Accounts")
               
+              // IMPORTANT: Clear old data when account changes to ensure only selected account's data is shown
+              // This prevents showing data from previous account selection
+              _allData = [];
+              _filteredData = [];
+              
+              // Reset flag when account changes (new data will be loaded)
+              _isDataFromMainApiWithDateFilter = false;
+              
+              // IMPORTANT: Reset Cash In/Out/Balance values when account changes
+              // This prevents showing previous account's values while new account data loads
+              // Values will be set from API response when it arrives
+              _cashIn = 0.0;
+              _cashOut = 0.0;
+              _balance = 0.0;
+              _userCashIn = 0.0;
+              _userCashOut = 0.0;
+              _userBalance = 0.0;
+              
               // Calculate aggregated totals when "All Accounts" is selected
               if (accountIdToUse == null || accountIdToUse.isEmpty) {
                 _calculateAllAccountsWalletInfo();
+                // For "All Accounts", use aggregated wallet info if available
+                if (_allAccountsWalletInfo != null) {
+                  _cashIn = _parseAmount(_allAccountsWalletInfo!['cashIn'] ?? 0);
+                  _cashOut = _parseAmount(_allAccountsWalletInfo!['cashOut'] ?? 0);
+                  _balance = _parseAmount(_allAccountsWalletInfo!['totalBalance'] ?? 0);
+                  _userCashIn = _cashIn;
+                  _userCashOut = _cashOut;
+                  _userBalance = _balance;
+                }
+              } else {
+                // Clear account-specific wallet info when switching to a different account
+                // Values will be set from API response
+                _accountInfoWithWallet = null;
               }
               _accountReportsDataLoaded = false; // Reset flag
               _accountReportsCallbackScheduled = true; // Prevent post-frame callback from triggering
@@ -28318,8 +28503,39 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   ? null
                   : () {
                       final filterProvider = _filterProvider;
-                      filterProvider.setMode(mode == 'All' ? null : mode);
-                      _applyFilters();
+                      final bool isAccountReports = _selectedItem == NavItem.accountReports;
+                      
+                      // Capture previous mode before changing
+                      final String? previousMode = filterProvider.selectedMode;
+                      final String? newMode = mode == 'All' ? null : mode;
+                      
+                      // Set the mode filter
+                      filterProvider.setMode(newMode);
+                      
+                      // For Account Reports, trigger data reload directly
+                      // This ensures data reloads even if _applyFilters blocks _onFilterChanged
+                      if (isAccountReports) {
+                        debugPrint('═══════════════════════════════════════════════════════════');
+                        debugPrint('📊 [ACCOUNT REPORTS] Payment Mode Changed:');
+                        debugPrint('   Previous mode: ${previousMode ?? "All"}');
+                        debugPrint('   New mode: ${newMode ?? "All"}');
+                        debugPrint('   _isLoadingFinancialData: $_isLoadingFinancialData');
+                        debugPrint('   Triggering direct data reload with forceRefresh: true');
+                        debugPrint('═══════════════════════════════════════════════════════════');
+                        
+                        // Use post-frame callback to ensure setState completes first
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted && _selectedItem == NavItem.accountReports) {
+                            debugPrint('🔄 [ACCOUNT REPORTS] Executing payment mode reload...');
+                            _loadFinancialData(forceRefresh: true, isSelfWallet: false);
+                          } else {
+                            debugPrint('⚠️  [ACCOUNT REPORTS] Skipping payment mode reload - screen changed or unmounted');
+                          }
+                        });
+                      } else {
+                        // For other screens, use normal filter flow
+                        _applyFilters();
+                      }
                     },
               style: OutlinedButton.styleFrom(
                 padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 16),
@@ -28802,8 +29018,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   if (type == 'Expenses') {
                     to = _displayValue(item['category'] ?? item['expenseType'] ?? item['to']);
                   }
-                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") instead of just payment method type (Cash, UPI, Bank)
-                  final mode = _extractPaymentModeName(item) ?? _displayValue(item['mode']) ?? 'Cash';
+                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") from paymentMode.modeName only (no fallback)
+                  final mode = _extractPaymentModeNameOnly(item) ?? 'Unknown';
                   final amount = _formatAmount(_parseAmount(item['amount']));
                   final status = _displayValue(item['status']);
                   final accountName = isAllAccounts 
@@ -28869,8 +29085,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   if (type == 'Expenses') {
                     to = _displayValue(item['category'] ?? item['expenseType'] ?? item['to']);
                   }
-                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") instead of just payment method type (Cash, UPI, Bank)
-                  final mode = _extractPaymentModeName(item) ?? _displayValue(item['mode']) ?? 'Cash';
+                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") from paymentMode.modeName only (no fallback)
+                  final mode = _extractPaymentModeNameOnly(item) ?? 'Unknown';
                   final amount = _formatAmount(_parseAmount(item['amount']));
                   // Extract approvedBy name properly for expenses
                   String approvedBy = '-';
