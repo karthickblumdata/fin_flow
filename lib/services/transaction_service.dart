@@ -48,15 +48,35 @@ class TransactionService {
     String? paymentModeId,
   }) async {
     try {
-      final response = await ApiService.post(ApiConstants.createTransaction, {
+      // Debug: Log paymentModeId before sending
+      print('🔍 [TransactionService] createTransaction called with:');
+      print('   paymentModeId: $paymentModeId');
+      print('   paymentModeId != null: ${paymentModeId != null}');
+      print('   paymentModeId.isNotEmpty: ${paymentModeId?.isNotEmpty ?? false}');
+      
+      final requestBody = <String, dynamic>{
         'sender': sender,
         'receiver': receiver,
         'amount': amount,
         'mode': mode,
-        if (purpose != null) 'purpose': purpose,
-        if (proofUrl != null) 'proofUrl': proofUrl,
-        if (paymentModeId != null && paymentModeId.isNotEmpty) 'paymentModeId': paymentModeId,
-      });
+      };
+      
+      if (purpose != null) {
+        requestBody['purpose'] = purpose;
+      }
+      if (proofUrl != null) {
+        requestBody['proofUrl'] = proofUrl;
+      }
+      if (paymentModeId != null && paymentModeId.trim().isNotEmpty) {
+        requestBody['paymentModeId'] = paymentModeId.trim();
+        print('   ✅ paymentModeId added to request: ${paymentModeId.trim()}');
+      } else {
+        print('   ⚠️  paymentModeId NOT added to request (null or empty)');
+      }
+      
+      print('   Final request body keys: ${requestBody.keys.toList()}');
+      
+      final response = await ApiService.post(ApiConstants.createTransaction, requestBody);
 
       return {
         'success': true,

@@ -168,8 +168,25 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
           _isLoadingPaymentModes = false;
           // Set default selected payment mode to first available
           if (_paymentModes.isNotEmpty) {
-            _selectedPaymentModeId = _paymentModes.first['_id']?.toString() ?? 
-                                     _paymentModes.first['id']?.toString();
+            final firstPM = _paymentModes.first;
+            // Try multiple ways to get the ID
+            final pmId = firstPM['_id']?.toString()?.trim() ?? 
+                        firstPM['id']?.toString()?.trim() ??
+                        firstPM['_id']?.toString() ??
+                        firstPM['id']?.toString();
+            
+            if (pmId != null && pmId.isNotEmpty) {
+              _selectedPaymentModeId = pmId;
+              // Derive mode from selected PaymentMode description
+              final description = firstPM['description']?.toString() ?? '';
+              final parsed = PaymentModeService.parseDescription(description);
+              _selectedMode = parsed['mode']?.toString() ?? 'Cash';
+              print('🔍 [AddTransactionDialog] Auto-selected payment mode: ID=${_selectedPaymentModeId}, Mode=${_selectedMode}');
+            } else {
+              print('⚠️ [AddTransactionDialog] Failed to extract payment mode ID from first payment mode');
+              print('   Payment mode data: ${firstPM.keys.toList()}');
+              print('   _id: ${firstPM['_id']}, id: ${firstPM['id']}');
+            }
           }
         });
       } else {
@@ -307,6 +324,16 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
         return;
       }
 
+      // Debug: Verify paymentModeId before sending
+      print('🔍 [AddTransactionDialog] Creating transaction with:');
+      print('   sender: $_currentUserId');
+      print('   receiver: $_selectedReceiverId');
+      print('   amount: $amount');
+      print('   mode: $_selectedMode');
+      print('   paymentModeId: $_selectedPaymentModeId');
+      print('   paymentModeId type: ${_selectedPaymentModeId.runtimeType}');
+      print('   paymentModeId isEmpty: ${_selectedPaymentModeId?.isEmpty ?? true}');
+      
       final result = await TransactionService.createTransaction(
         sender: _currentUserId!,
         receiver: _selectedReceiverId!,
@@ -670,7 +697,18 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
                               itemBuilder: (context) {
                                 return _paymentModes.map<PopupMenuEntry<String>>((pm) {
                                   final modeName = pm['modeName']?.toString() ?? 'Unknown';
-                                  final modeId = pm['_id']?.toString() ?? pm['id']?.toString();
+                                  // Extract modeId with better null handling
+                                  final modeId = (pm['_id']?.toString()?.trim() ?? 
+                                                 pm['id']?.toString()?.trim() ??
+                                                 pm['_id']?.toString() ??
+                                                 pm['id']?.toString());
+                                  if (modeId == null || modeId.isEmpty) {
+                                    print('⚠️ [AddTransactionDialog] Payment mode has no valid ID: $modeName');
+                                    return const PopupMenuItem<String>(
+                                      enabled: false,
+                                      child: Text('Invalid payment mode'),
+                                    );
+                                  }
                                   final description = pm['description']?.toString() ?? '';
                                   final parsed = PaymentModeService.parseDescription(description);
                                   final mode = parsed['mode']?.toString() ?? 'Cash';

@@ -130,8 +130,13 @@ class WalletService {
   }
 
   /// Withdraw amount from wallet (SuperAdmin only)
-  static Future<Map<String, dynamic>> withdrawAmount(
-      String mode, double amount, String notes) async {
+  static Future<Map<String, dynamic>> withdrawAmount({
+    required String mode,
+    required double amount,
+    String? notes,
+    String? userId,
+    String? paymentModeId,
+  }) async {
     try {
       // Validation
       if (amount <= 0) {
@@ -148,11 +153,24 @@ class WalletService {
         };
       }
 
-      final response = await ApiService.post(ApiConstants.withdrawWallet, {
+      final body = <String, dynamic>{
         'mode': mode,
         'amount': amount,
-        'notes': notes,
-      });
+      };
+      
+      if (notes != null && notes.isNotEmpty) {
+        body['notes'] = notes;
+      }
+      
+      if (userId != null && userId.isNotEmpty) {
+        body['userId'] = userId;
+      }
+      
+      if (paymentModeId != null && paymentModeId.isNotEmpty) {
+        body['paymentModeId'] = paymentModeId;
+      }
+
+      final response = await ApiService.post(ApiConstants.withdrawWallet, body);
 
       return {
         'success': true,
