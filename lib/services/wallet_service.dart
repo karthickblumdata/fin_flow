@@ -518,8 +518,13 @@ class WalletService {
       if (type != null && type.isNotEmpty) {
         queryParams['type'] = type;
       }
+      // Always include accountId in query params (even if null) to help backend detect Account Reports context
+      // This allows backend to distinguish between Account Reports "All Accounts" and All Wallet Report
       if (accountId != null && accountId.isNotEmpty) {
         queryParams['accountId'] = accountId;
+      } else {
+        // Explicitly pass 'null' as string to indicate Account Reports "All Accounts" context
+        queryParams['accountId'] = 'null';
       }
       if (userRole != null && userRole.isNotEmpty) {
         queryParams['userRole'] = userRole;

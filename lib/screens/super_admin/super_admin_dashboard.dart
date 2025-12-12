@@ -3397,11 +3397,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           );
           
           if (walletReportResult['success'] == true) {
-            // Calculate aggregated totals for "All Accounts" from payment modes
-            _calculateAllAccountsWalletInfo();
-            
             final summary = walletReportResult['summary'] ?? <String, dynamic>{};
             final data = walletReportResult['data'] ?? <Map<String, dynamic>>[];
+            
+            // Use fresh API summary data for "All Accounts" instead of cached payment modes
+            // This ensures accurate wallet values from database
+            _calculateAllAccountsWalletInfo(apiSummary: summary);
             
             debugPrint('═══════════════════════════════════════════════════════════');
             debugPrint('✅ [ACCOUNT REPORTS] "All Accounts" API Response received:');
@@ -5335,8 +5336,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                 : 'Unknown';
             // Get expense category name
             final categoryName = e['category']?.toString() ?? 'Unknown';
-            // Extract payment mode/account name
-            final accountName = _extractPaymentModeName(e) ?? (e['mode']?.toString() ?? 'Cash');
+            // Extract payment mode/account name - use paymentMode.modeName only (no fallback to mode field)
+            // For Account Reports, we want actual account name, not mode type (Cash/UPI/Bank)
+            final accountName = _extractPaymentModeNameOnly(e) ?? 
+                               (e['paymentModeId']?.toString() ?? 'Unknown Account');
             // Extract approvedBy name
             final approvedByValue = e['approvedBy'];
             String approvedByName = '';
@@ -5426,8 +5429,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               : userFilteredTransactions;
           allData.addAll(filteredTransactions.map((t) {
             final amount = _parseAmount(t['amount']);
-            // Extract payment mode/account name
-            final accountName = _extractPaymentModeName(t) ?? (t['mode']?.toString() ?? 'Cash');
+            // Extract payment mode/account name - use paymentMode.modeName only (no fallback to mode field)
+            // For Account Reports, we want actual account name, not mode type (Cash/UPI/Bank)
+            final accountName = _extractPaymentModeNameOnly(t) ?? 
+                               (t['paymentModeId']?.toString() ?? 'Unknown Account');
             // Extract approvedBy name
             final approvedByValue = t['approvedBy'];
             String approvedByName = '';
@@ -5524,8 +5529,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               }
             }
             
-            // Extract payment mode/account name
-            final accountName = _extractPaymentModeName(c) ?? (c['mode']?.toString() ?? 'Cash');
+            // Extract payment mode/account name - use paymentMode.modeName only (no fallback to mode field)
+            // For Account Reports, we want actual account name, not mode type (Cash/UPI/Bank)
+            final accountName = _extractPaymentModeNameOnly(c) ?? 
+                               (c['paymentModeId']?.toString() ?? 'Unknown Account');
             
             return {
               ...c,
@@ -18387,7 +18394,51 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   }
 
   // Calculate aggregated wallet info from all active payment modes
-  void _calculateAllAccountsWalletInfo() {
+  // If apiSummary is provided, use fresh API data instead of cached payment modes
+  void _calculateAllAccountsWalletInfo({Map<String, dynamic>? apiSummary = null}) {
+    // Priority 1: Use fresh API summary data if available (most accurate)
+    if (apiSummary != null && apiSummary.isNotEmpty) {
+      final apiCashIn = _parseAmount(apiSummary['cashIn'] ?? 0);
+      final apiCashOut = _parseAmount(apiSummary['cashOut'] ?? 0);
+      // For "All Accounts", calculate balance as cashIn - cashOut (not from API balance)
+      // API balance might be sum of payment mode balances, which is different from cash flow balance
+      final calculatedBalance = apiCashIn - apiCashOut;
+      
+      // For balance breakdown, try to get from API if available, otherwise calculate from payment modes
+      double totalCashBalance = 0;
+      double totalUpiBalance = 0;
+      double totalBankBalance = 0;
+      
+      // Try to get balance breakdown from payment modes (for detailed breakdown)
+      if (_paymentModes.isNotEmpty) {
+        final activeModes = _paymentModes.where((mode) => mode['isActive'] != false).toList();
+        for (var mode in activeModes) {
+          totalCashBalance += _parseAmount(mode['cashBalance'] ?? 0);
+          totalUpiBalance += _parseAmount(mode['upiBalance'] ?? 0);
+          totalBankBalance += _parseAmount(mode['bankBalance'] ?? 0);
+        }
+      }
+      
+      _allAccountsWalletInfo = {
+        'modeName': 'All Accounts',
+        'description': 'All Active Payment Modes',
+        'cashIn': apiCashIn,
+        'cashOut': apiCashOut,
+        'totalBalance': calculatedBalance, // Use calculated balance (cashIn - cashOut)
+        'cashBalance': totalCashBalance,
+        'upiBalance': totalUpiBalance,
+        'bankBalance': totalBankBalance,
+      };
+      
+      debugPrint('📊 [ACCOUNT REPORTS] Calculated All Accounts wallet info from API summary:');
+      debugPrint('   Cash In: $apiCashIn (from API)');
+      debugPrint('   Cash Out: $apiCashOut (from API)');
+      debugPrint('   Total Balance: $calculatedBalance (calculated as cashIn - cashOut)');
+      debugPrint('   Note: Using fresh API data and calculating balance from cash flow');
+      return;
+    }
+    
+    // Priority 2: Fallback to calculating from cached payment modes (if API data not available)
     if (_paymentModes.isEmpty) {
       _allAccountsWalletInfo = null;
       return;
@@ -18415,7 +18466,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       totalBankBalance += _parseAmount(mode['bankBalance'] ?? 0);
     }
     
-    double totalBalance = totalCashBalance + totalUpiBalance + totalBankBalance;
+    // For "All Accounts", calculate balance as cashIn - cashOut (not sum of payment mode balances)
+    // This ensures balance reflects cash flow, not just wallet balances
+    double totalBalance = totalCashIn - totalCashOut;
     
     // Only calculate and store _allAccountsWalletInfo
     // DO NOT update summary card values here - let other code paths (like _applyFilters) handle it
@@ -18425,18 +18478,18 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       'description': 'All Active Payment Modes',
       'cashIn': totalCashIn,
       'cashOut': totalCashOut,
-      'totalBalance': totalBalance,
+      'totalBalance': totalBalance, // Use calculated balance (cashIn - cashOut)
       'cashBalance': totalCashBalance,
       'upiBalance': totalUpiBalance,
       'bankBalance': totalBankBalance,
     };
     
-    debugPrint('📊 [ACCOUNT REPORTS] Calculated All Accounts wallet info:');
+    debugPrint('📊 [ACCOUNT REPORTS] Calculated All Accounts wallet info from cached payment modes:');
     debugPrint('   Active Payment Modes: ${activeModes.length}');
     debugPrint('   Total Cash In: $totalCashIn');
     debugPrint('   Total Cash Out: $totalCashOut');
-    debugPrint('   Total Balance: $totalBalance');
-    debugPrint('   Note: Summary card values will be updated by _applyFilters or data load logic');
+    debugPrint('   Total Balance: $totalBalance (calculated as cashIn - cashOut)');
+    debugPrint('   Note: Using cached payment modes (API data not available)');
   }
 
   // Build account wallet details card (ONLY for Account Reports)
@@ -27608,15 +27661,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     );
 
     if (isMobile) {
-      // Type options: Add Amount and Withdraw for All Account Reports, standard types for others
+      // Type options: Add Amount and Withdraw available for all wallet views
       // Filter based on permissions for Self Wallet
-      List<String> typeOptions = isAllAccounts
-          ? ['All', 'Add Amount', 'Withdraw', 'Expenses', 'Transactions', 'Collections']
-          : ['All', 'Expenses', 'Transactions', 'Collections'];
+      List<String> typeOptions = ['All', 'Add Amount', 'Withdraw', 'Expenses', 'Transactions', 'Collections'];
       
       // For Self Wallet, filter out types that user doesn't have permission to view
       if (isSelfWallet && !isAllAccounts) {
-        final List<String> filteredOptions = ['All'];
+        final List<String> filteredOptions = ['All', 'Add Amount', 'Withdraw'];
         if (_canViewSelfWalletExpenses) filteredOptions.add('Expenses');
         if (_canViewSelfWalletTransaction) filteredOptions.add('Transactions');
         if (_canViewSelfWalletCollection) filteredOptions.add('Collections');
@@ -27736,15 +27787,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       );
     }
 
-    // Type options: Add Amount and Withdraw for All Account Reports, standard types for others
+    // Type options: Add Amount and Withdraw available for all wallet views
     // Filter based on permissions for Self Wallet
-    List<String> typeOptions = isAllAccounts
-        ? ['All', 'Add Amount', 'Withdraw', 'Expenses', 'Transactions', 'Collections']
-        : ['All', 'Expenses', 'Transactions', 'Collections'];
+    List<String> typeOptions = ['All', 'Add Amount', 'Withdraw', 'Expenses', 'Transactions', 'Collections'];
     
     // For Self Wallet, filter out types that user doesn't have permission to view
     if (isSelfWallet && !isAllAccounts) {
-      final List<String> filteredOptions = ['All'];
+      final List<String> filteredOptions = ['All', 'Add Amount', 'Withdraw'];
       if (_canViewSelfWalletExpenses) filteredOptions.add('Expenses');
       if (_canViewSelfWalletTransaction) filteredOptions.add('Transactions');
       if (_canViewSelfWalletCollection) filteredOptions.add('Collections');

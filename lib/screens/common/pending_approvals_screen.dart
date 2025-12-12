@@ -16,6 +16,9 @@ import '../../services/socket_service.dart';
 import '../../widgets/action_pill_button.dart';
 import '../../utils/profile_image_helper.dart';
 import '../../utils/ui_permission_checker.dart';
+import '../../widgets/add_collection_dialog.dart';
+import '../../widgets/add_transaction_dialog.dart';
+import '../../widgets/add_expense_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum _HeaderAction { approve, unapprove, reject, flag, edit, delete }
@@ -4063,6 +4066,9 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
         : (approvedBy is String ? approvedBy : null);
     final paymentMode = collection['paymentModeId'] ?? collection['paymentMode'];
     final autoPay = paymentMode is Map ? (paymentMode['autoPay'] ?? false) : false;
+    final paymentModeName = paymentMode is Map 
+        ? (paymentMode['modeName']?.toString()?.trim())
+        : null;
     
     return {
       'id': collection['_id'] ?? collection['id'],
@@ -4076,7 +4082,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
       'toId': receiverUserId,
       'amount': _formatCurrency(amountValue),
       'amountValue': amountValue,
-      'mode': _normalizeMode(collection['mode']),
+      'mode': paymentModeName ?? _normalizeMode(collection['mode']),
       'purpose': collection['customerName'] ?? 'Customer Payment',
       'date': _formatDateLabel(createdAt),
       'createdAt': createdAt,
@@ -4110,6 +4116,10 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
     final approvedByName = approvedBy is Map
         ? (approvedBy['name'] ?? approvedBy['fullName'] ?? approvedBy['displayName'])
         : (approvedBy is String ? approvedBy : null);
+    final paymentMode = transaction['paymentModeId'] ?? transaction['paymentMode'];
+    final paymentModeName = paymentMode is Map 
+        ? (paymentMode['modeName']?.toString()?.trim())
+        : null;
     
     return {
       'id': transaction['_id'] ?? transaction['id'],
@@ -4121,7 +4131,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
       'toId': receiverUserId,
       'amount': _formatCurrency(amountValue),
       'amountValue': amountValue,
-      'mode': _normalizeMode(transaction['mode']),
+      'mode': paymentModeName ?? _normalizeMode(transaction['mode']),
       'purpose': transaction['purpose'] ?? 'Transfer',
       'date': _formatDateLabel(createdAt),
       'createdAt': createdAt,
@@ -4164,6 +4174,22 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
     // For Purpose field, show expense category/type (e.g., "Travel", "Tea") instead of description
     // This makes it clear what type of expense it is
     final purposeText = expenseCategoryName.isNotEmpty ? expenseCategoryName : 'Expense';
+    // Handle paymentModeId - it can be populated (object with modeName) or just an ID
+    final paymentMode = expense['paymentModeId'] ?? expense['paymentMode'];
+    String? paymentModeName;
+    
+    if (paymentMode is Map) {
+      // If populated, extract modeName
+      paymentModeName = paymentMode['modeName']?.toString()?.trim();
+    } else if (paymentMode != null) {
+      // If paymentModeId exists but not populated, we can't get modeName without another query
+      // So we'll fall back to expense['mode']
+      paymentModeName = null;
+    }
+    
+    // For pending expenses: paymentModeId might be null, so show expense['mode'] (Cash/UPI/Bank)
+    // For approved expenses: paymentModeId should be populated with modeName
+    final modeDisplay = paymentModeName ?? _normalizeMode(expense['mode']);
     
     return {
       'id': expense['_id'] ?? expense['id'],
@@ -4176,7 +4202,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
       'toId': expenseUserId,
       'amount': _formatCurrency(amountValue),
       'amountValue': amountValue,
-      'mode': _normalizeMode(expense['mode']),
+      'mode': modeDisplay,
       'purpose': purposeText,
       'date': _formatDateLabel(createdAt),
       'createdAt': createdAt,
@@ -5232,104 +5258,9 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
       return;
     }
 
-    final edits = await _showEditDialog(item);
-    if (!mounted || edits == null) {
-      return;
-    }
-
-    double? parseAmount(dynamic value) {
-      if (value == null) return null;
-      if (value is num) return value.toDouble();
-      if (value is String && value.trim().isNotEmpty) {
-        return double.tryParse(value.trim());
-      }
-      return null;
-    }
-
-    String? sanitizeString(dynamic value) {
-      if (value == null) return null;
-      if (value is String) {
-        final trimmed = value.trim();
-        return trimmed.isEmpty ? null : trimmed;
-      }
-      return value.toString();
-    }
-
-    _setActionInProgress(id, 'edit');
-
-    try {
-      Map<String, dynamic> result;
-      if (type == 'Collections') {
-        final String? notesValue = edits['notes'] as String?;
-        result = await CollectionService.editCollection(
-          id,
-          customerName: sanitizeString(edits['customerName']),
-          amount: parseAmount(edits['amount']),
-          mode: sanitizeString(edits['mode']),
-          notes: notesValue?.trim(),
-        );
-      } else if (type == 'Transactions') {
-        final String? proofValue = edits['proofUrl'] as String?;
-        result = await TransactionService.editTransaction(
-          id,
-          amount: parseAmount(edits['amount']),
-          mode: sanitizeString(edits['mode']),
-          purpose: sanitizeString(edits['purpose']),
-          proofUrl: proofValue?.trim(),
-        );
-      } else if (type == 'Expenses') {
-        final String? descriptionValue = edits['description'] as String?;
-        final String? proofValue = edits['proofUrl'] as String?;
-        result = await ExpenseService.updateExpense(
-          id,
-          category: sanitizeString(edits['category']),
-          amount: parseAmount(edits['amount']),
-          mode: sanitizeString(edits['mode']),
-          description: descriptionValue?.trim(),
-          proofUrl: proofValue?.trim(),
-        );
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Edit not supported for item type $type'),
-              backgroundColor: AppTheme.errorColor,
-            ),
-          );
-        }
-        return;
-      }
-
-      if (mounted) {
-        if (result['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['message'] ?? '$type updated successfully'),
-              backgroundColor: AppTheme.secondaryColor,
-            ),
-          );
-          await _loadPendingItems();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['message'] ?? 'Failed to update $type'),
-              backgroundColor: AppTheme.errorColor,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
-            backgroundColor: AppTheme.errorColor,
-          ),
-        );
-      }
-    } finally {
-      _clearActionInProgress();
-    }
+    // Show the appropriate edit dialog
+    // The dialogs handle the edit internally and call onSuccess to refresh
+    await _showEditDialog(item);
   }
 
   Future<void> _deleteItem(Map<String, dynamic> item) async {
@@ -5418,260 +5349,91 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
 
   Future<Map<String, dynamic>?> _showEditDialog(Map<String, dynamic> item) async {
     final String type = item['type']?.toString() ?? '';
-    if (type.isEmpty) {
+    final String itemId = item['id']?.toString() ?? '';
+    
+    if (type.isEmpty || itemId.isEmpty) {
       return null;
     }
 
-    final raw = item['raw'] is Map
-        ? Map<String, dynamic>.from(item['raw'] as Map)
-        : <String, dynamic>{};
-    final amountValue = item['amountValue'] is num ? (item['amountValue'] as num).toDouble() : null;
-    final amountController = TextEditingController(
-      text: amountValue != null ? amountValue.toString() : '',
-    );
-    final modeController = TextEditingController(text: item['mode']?.toString() ?? '');
-    final notesController = TextEditingController(text: raw['notes']?.toString() ?? '');
-    final customerNameController = TextEditingController(
-      text: raw['customerName']?.toString() ?? item['purpose']?.toString() ?? '',
-    );
-    final purposeController = TextEditingController(text: raw['purpose']?.toString() ?? item['purpose']?.toString() ?? '');
-    final proofController = TextEditingController(text: raw['proofUrl']?.toString() ?? '');
-    final categoryController = TextEditingController(text: raw['category']?.toString() ?? '');
-    final descriptionController = TextEditingController(text: raw['description']?.toString() ?? '');
-
-    final formKey = GlobalKey<FormState>();
+    // Get user info for expense dialog
+    String? userId;
+    String? userName;
+    try {
+      userId = await AuthService.getUserId();
+      userName = await AuthService.getUserName();
+    } catch (e) {
+      // Use defaults if can't get user info
+      userId = _currentUserId;
+      userName = 'User';
+    }
 
     try {
-      return await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (dialogContext) {
-          final List<Widget> fields = [];
-          final Set<String> modeSuggestions = {
-            ..._defaultModeSuggestions,
-            if (item['mode'] != null && item['mode'].toString().trim().isNotEmpty)
-              item['mode'].toString().trim(),
-            ..._availableModes.where((value) => value != _allFilterValue),
-          }..removeWhere((value) => value.trim().isEmpty);
-          final List<String> sortedModeSuggestions = modeSuggestions.toList()
-            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-
-          fields.add(
-            TextFormField(
-              controller: amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount'),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Enter amount';
-                }
-                final parsed = double.tryParse(value.trim());
-                if (parsed == null || parsed <= 0) {
-                  return 'Enter a valid amount';
-                }
-                return null;
-              },
+      if (type == 'Collections') {
+        await showDialog(
+          context: context,
+          builder: (context) => AddCollectionDialog(
+            collectionId: itemId,
+            existingData: item,
+            onSuccess: () {
+              // Refresh data after edit
+              _loadPendingItems();
+            },
+          ),
+        );
+        // Return a dummy result to indicate edit was attempted
+        return {'edited': true};
+      } else if (type == 'Transactions') {
+        await showDialog(
+          context: context,
+          builder: (context) => AddTransactionDialog(
+            transactionId: itemId,
+            existingData: item,
+            onSuccess: () {
+              // Refresh data after edit
+              _loadPendingItems();
+            },
+          ),
+        );
+        // Return a dummy result to indicate edit was attempted
+        return {'edited': true};
+      } else if (type == 'Expenses') {
+        if (userId == null || userName == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Unable to get user information'),
+              backgroundColor: AppTheme.errorColor,
             ),
           );
-
-          fields.add(const SizedBox(height: 12));
-          fields.add(
-            TextFormField(
-              controller: modeController,
-              decoration: InputDecoration(
-                labelText: 'Mode',
-                suffixIcon: sortedModeSuggestions.isEmpty
-                    ? null
-                    : PopupMenuButton<String>(
-                        tooltip: 'Select mode',
-                        itemBuilder: (context) => sortedModeSuggestions
-                            .map(
-                              (option) => PopupMenuItem<String>(
-                                value: option,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        option,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (_autoPayModes.contains(option)) ...[
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AppTheme.secondaryColor.withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          'AutoPay',
-                                          style: AppTheme.bodySmall.copyWith(
-                                            fontSize: 11,
-                                            letterSpacing: 0.3,
-                                            color: AppTheme.secondaryColor,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onSelected: (value) {
-                          modeController.text = value;
-                        },
-                        icon: const Icon(Icons.unfold_more),
-                      ),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Enter mode';
-                }
-                return null;
-              },
-            ),
-          );
-
-          if (type == 'Collections') {
-            fields.add(const SizedBox(height: 12));
-            fields.add(
-              TextFormField(
-                controller: customerNameController,
-                decoration: const InputDecoration(labelText: 'Customer Name'),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Enter customer name';
-                  }
-                  return null;
-                },
-              ),
-            );
-
-            fields.add(const SizedBox(height: 12));
-            fields.add(
-              TextFormField(
-                controller: notesController,
-                decoration: const InputDecoration(labelText: 'Notes (optional)'),
-                maxLines: 2,
-              ),
-            );
-          } else if (type == 'Transactions') {
-            fields.add(const SizedBox(height: 12));
-            fields.add(
-              TextFormField(
-                controller: purposeController,
-                decoration: const InputDecoration(labelText: 'Purpose'),
-                maxLines: 2,
-              ),
-            );
-
-            fields.add(const SizedBox(height: 12));
-            fields.add(
-              TextFormField(
-                controller: proofController,
-                decoration: const InputDecoration(labelText: 'Proof URL (optional)'),
-              ),
-            );
-          } else if (type == 'Expenses') {
-            fields.add(const SizedBox(height: 12));
-            fields.add(
-              TextFormField(
-                controller: categoryController,
-                decoration: const InputDecoration(labelText: 'Category'),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Enter category';
-                  }
-                  return null;
-                },
-              ),
-            );
-
-            fields.add(const SizedBox(height: 12));
-            fields.add(
-              TextFormField(
-                controller: descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Description (optional)'),
-              ),
-            );
-
-            fields.add(const SizedBox(height: 12));
-            fields.add(
-              TextFormField(
-                controller: proofController,
-                decoration: const InputDecoration(labelText: 'Proof URL (optional)'),
-              ),
-            );
-          }
-
-          return AlertDialog(
-            title: Text('Edit $type'),
-            content: Form(
-              key: formKey,
-              child: SingleChildScrollView(
-                child: SizedBox(
-                  width: 360,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: fields,
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (!formKey.currentState!.validate()) {
-                    return;
-                  }
-
-                  final result = <String, dynamic>{
-                    'amount': amountController.text.trim(),
-                    'mode': modeController.text.trim(),
-                  };
-
-                  if (type == 'Collections') {
-                    result['customerName'] = customerNameController.text.trim();
-                    result['notes'] = notesController.text.trim();
-                  } else if (type == 'Transactions') {
-                    result['purpose'] = purposeController.text.trim();
-                    result['proofUrl'] = proofController.text.trim();
-                  } else if (type == 'Expenses') {
-                    result['category'] = categoryController.text.trim();
-                    result['description'] = descriptionController.text;
-                    result['proofUrl'] = proofController.text.trim();
-                  }
-
-                  Navigator.of(dialogContext).pop(result);
-                },
-                child: const Text('Save'),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      amountController.dispose();
-      modeController.dispose();
-      notesController.dispose();
-      customerNameController.dispose();
-      purposeController.dispose();
-      proofController.dispose();
-      categoryController.dispose();
-      descriptionController.dispose();
+          return null;
+        }
+        await showDialog(
+          context: context,
+          builder: (context) => AddExpenseDialog(
+            userId: userId!,
+            userName: userName!,
+            expenseId: itemId,
+            existingData: item,
+            onSuccess: () {
+              // Refresh data after edit
+              _loadPendingItems();
+            },
+          ),
+        );
+        // Return a dummy result to indicate edit was attempted
+        return {'edited': true};
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening edit dialog: ${e.toString()}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
     }
+    
+    return null;
   }
 
   Widget _buildActionChip({
