@@ -20,6 +20,7 @@ import '../screens/common/pending_approvals_screen.dart';
 import '../screens/super_admin/super_admin_settings_screen.dart';
 import '../constants/nav_item.dart';
 import '../services/auth_service.dart';
+import '../utils/ui_permission_checker.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/login',
@@ -157,6 +158,15 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/users/assign-wallets',
       name: 'assign-wallets',
+      redirect: (context, state) async {
+        // Check if user has assign_wallet permission
+        final hasAccess = await UIPermissionChecker.canViewMenuItem('assignWallets');
+        if (!hasAccess) {
+          // Redirect to dashboard if user doesn't have permission
+          return '/dashboard';
+        }
+        return null; // Allow access
+      },
       builder: (context, state) => SuperAdminDashboard(
         initialSelectedItem: NavItem.assignWallets,
       ),

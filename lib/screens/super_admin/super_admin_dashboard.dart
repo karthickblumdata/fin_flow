@@ -289,6 +289,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   bool _canViewExpenseReport = false;
   bool _canViewWalletMenu = false;
   bool _canViewUsersMenu = false;
+  bool _canViewAssignWallets = false;
   bool _canViewPaymentAccountsMenu = false;
   bool _canViewExpensesMenu = false;
   bool _canViewSettingsMenu = false;
@@ -979,6 +980,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       final canViewSmartApprovals = await UIPermissionChecker.canViewMenuItem('smartApprovals');
       final canViewUsers = await UIPermissionChecker.canViewMenuItem('users');
       final canViewRoles = await UIPermissionChecker.canViewMenuItem('roles');
+      final canViewAssignWallets = await UIPermissionChecker.canViewMenuItem('assignWallets');
       final canViewPaymentModes = await UIPermissionChecker.canViewMenuItem('paymentModes');
       final canViewAccountReports = await UIPermissionChecker.canViewMenuItem('accountReports');
       final canViewExpenseType = await UIPermissionChecker.canViewMenuItem('expenseType');
@@ -1129,6 +1131,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           _canViewAccountReports = canViewAccountReports;
           _canViewExpenseType = canViewExpenseType;
           _canViewExpenseReport = canViewExpenseReport;
+          _canViewAssignWallets = canViewAssignWallets;
           _canViewWalletMenu = canViewWalletMenu;
           _canViewUsersMenu = canViewUsersMenu;
           _canViewPaymentAccountsMenu = canViewPaymentAccountsMenu;
@@ -1223,6 +1226,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           _canViewAccountReports = true;
           _canViewExpenseType = true;
           _canViewExpenseReport = true;
+          _canViewAssignWallets = true;
           _canViewWalletMenu = true;
           _canViewUsersMenu = true;
           _canViewPaymentAccountsMenu = true;
@@ -1315,8 +1319,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         canAccess = _canViewRoles;
         break;
       case NavItem.assignWallets:
-        // Allow access to Assign Wallets (coming soon screen)
-        canAccess = _canViewUsersMenu;
+        // Check if user has all_users.assign_wallet permission
+        canAccess = _canViewAssignWallets;
         break;
       case NavItem.paymentModes:
         canAccess = _canViewPaymentModes;
@@ -9863,18 +9867,20 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           ),
         );
       }
-      usersChildren.add(
-        _buildSubNavItem(
-          title: 'Assign Wallets',
-          isSelected: _selectedItem == NavItem.assignWallets,
-          onTap: () {
-            setState(() {
-              _usersExpanded = true;
-            });
-            _navigateToRoute(NavItem.assignWallets);
-          },
-        ),
-      );
+      if (_canViewAssignWallets) {
+        usersChildren.add(
+          _buildSubNavItem(
+            title: 'Assign Wallets',
+            isSelected: _selectedItem == NavItem.assignWallets,
+            onTap: () {
+              setState(() {
+                _usersExpanded = true;
+              });
+              _navigateToRoute(NavItem.assignWallets);
+            },
+          ),
+        );
+      }
       
       // Only show users menu if at least one child is visible
       if (usersChildren.isNotEmpty) {
@@ -10162,14 +10168,16 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           ),
         );
       }
-      usersOptions.add(
-        _CollapsedMenuOption(
-          id: 'assignWallets',
-          label: 'Assign Wallets',
-          isSelected: _selectedItem == NavItem.assignWallets,
-          onSelected: () => _navigateToRoute(NavItem.assignWallets),
-        ),
-      );
+      if (_canViewAssignWallets) {
+        usersOptions.add(
+          _CollapsedMenuOption(
+            id: 'assignWallets',
+            label: 'Assign Wallets',
+            isSelected: _selectedItem == NavItem.assignWallets,
+            onSelected: () => _navigateToRoute(NavItem.assignWallets),
+          ),
+        );
+      }
       
       if (usersOptions.isNotEmpty) {
         menuItems.add(
@@ -11083,21 +11091,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                     ),
         );
       }
-      usersChildren.add(
-                    _buildMobileNavItem(
-                      icon: Icons.account_balance_wallet_outlined,
-                      title: 'Assign Wallets',
-                      isSelected: _selectedItem == NavItem.assignWallets,
-                      isSubItem: true,
-                      onTap: () {
-                        setState(() {
-                          _isDrawerOpen = false;
-                          _usersExpanded = true;
-                        });
-                        _navigateToRoute(NavItem.assignWallets);
-                      },
-                    ),
-      );
+      if (_canViewAssignWallets) {
+        usersChildren.add(
+          _buildMobileNavItem(
+            icon: Icons.account_balance_wallet_outlined,
+            title: 'Assign Wallets',
+            isSelected: _selectedItem == NavItem.assignWallets,
+            isSubItem: true,
+            onTap: () {
+              setState(() {
+                _isDrawerOpen = false;
+                _usersExpanded = true;
+              });
+              _navigateToRoute(NavItem.assignWallets);
+            },
+          ),
+        );
+      }
                 
       // Only show users menu if at least one child is visible
       if (usersChildren.isNotEmpty) {

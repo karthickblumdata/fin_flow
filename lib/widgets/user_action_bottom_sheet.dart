@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
 import '../utils/ui_permission_checker.dart';
+import '../services/auth_service.dart';
 
 class UserActionBottomSheet extends StatefulWidget {
   final String userName;
@@ -11,6 +12,7 @@ class UserActionBottomSheet extends StatefulWidget {
   final VoidCallback? onAddCollection;
   final VoidCallback? onAddExpense;
   final VoidCallback? onAddTransaction;
+  final VoidCallback? onAssignWallet;
 
   const UserActionBottomSheet({
     super.key,
@@ -21,6 +23,7 @@ class UserActionBottomSheet extends StatefulWidget {
     this.onAddCollection,
     this.onAddExpense,
     this.onAddTransaction,
+    this.onAssignWallet,
   });
 
   @override
@@ -32,6 +35,7 @@ class _UserActionBottomSheetState extends State<UserActionBottomSheet> {
   bool _canAddCollection = false;
   bool _canAddExpense = false;
   bool _canAddTransaction = false;
+  bool _isSuperAdmin = false;
   bool _isLoadingPermissions = true;
 
   @override
@@ -45,6 +49,8 @@ class _UserActionBottomSheetState extends State<UserActionBottomSheet> {
     final canAddCollection = await UIPermissionChecker.hasPermission('wallet.all.add_collection');
     final canAddExpense = await UIPermissionChecker.hasPermission('wallet.all.add_expense');
     final canAddTransaction = await UIPermissionChecker.hasPermission('wallet.all.add_transaction');
+    final userRole = await AuthService.getUserRole();
+    final isSuperAdmin = userRole == 'SuperAdmin' || userRole == 'Super Admin';
 
     if (mounted) {
       setState(() {
@@ -52,6 +58,7 @@ class _UserActionBottomSheetState extends State<UserActionBottomSheet> {
         _canAddCollection = canAddCollection;
         _canAddExpense = canAddExpense;
         _canAddTransaction = canAddTransaction;
+        _isSuperAdmin = isSuperAdmin;
         _isLoadingPermissions = false;
       });
     }
@@ -280,6 +287,28 @@ class _UserActionBottomSheetState extends State<UserActionBottomSheet> {
             await Future.delayed(const Duration(milliseconds: 300));
             // Then call the callback
             widget.onAddTransaction?.call();
+          },
+        ),
+      );
+      actionButtons.add(const SizedBox(height: 12));
+    }
+
+    // Assign Wallet button - only show for SuperAdmin
+    if (_isSuperAdmin) {
+      actionButtons.add(
+        _buildActionButton(
+          context: context,
+          icon: Icons.assignment,
+          title: 'Assign Wallet',
+          subtitle: 'Assign wallet to ${widget.userName}',
+          color: const Color(0xFF6C63FF),
+          onTap: () async {
+            // Close bottom sheet first
+            Navigator.of(context).pop();
+            // Wait a bit for bottom sheet to close completely
+            await Future.delayed(const Duration(milliseconds: 300));
+            // Then call the callback
+            widget.onAssignWallet?.call();
           },
         ),
       );

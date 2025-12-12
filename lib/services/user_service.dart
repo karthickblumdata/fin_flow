@@ -171,12 +171,33 @@ class UserService {
     required List<String> assignedUserIds,
   }) async {
     try {
+      // Log what we're sending
+      print('\n📤 [API REQUEST] Sending User Assignments Update:');
+      print('   Endpoint: ${ApiConstants.updateUserAssignments(userId)}');
+      print('   Target User ID: $userId');
+      print('   Assigned User IDs Count: ${assignedUserIds.length}');
+      print('   Assigned User IDs: $assignedUserIds');
+      print('   Request Body: { "assignedUserIds": $assignedUserIds }');
+      
+      final requestBody = {
+        'assignedUserIds': assignedUserIds,
+      };
+      
+      print('   ✅ Request prepared, sending to backend...');
+      
       final response = await ApiService.put(
         ApiConstants.updateUserAssignments(userId),
-        {
-          'assignedUserIds': assignedUserIds,
-        },
+        requestBody,
       );
+      
+      print('   📥 [API RESPONSE] Received response:');
+      print('   Success: ${response['success']}');
+      print('   Message: ${response['message']}');
+      
+      if (response['user'] != null) {
+        final user = response['user'] as Map<String, dynamic>?;
+        print('   User assignedUsers count: ${(user?['assignedUsers'] as List?)?.length ?? 0}');
+      }
 
       if (response['success'] == true) {
         return {

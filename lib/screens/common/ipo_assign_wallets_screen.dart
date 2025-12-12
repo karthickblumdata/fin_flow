@@ -4,7 +4,6 @@ import '../../theme/app_theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../services/wallet_service.dart';
-import '../../services/collection_service.dart';
 import '../../utils/responsive.dart';
 import '../../utils/profile_image_helper.dart';
 
@@ -68,10 +67,14 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
             final hasWallet = await WalletService.hasWallet(userId: userId);
             user['hasWallet'] = hasWallet;
             
-            // Get assignment counts
-            final assignmentCounts = await _getAssignmentCounts(userId);
-            user['assignedToCount'] = assignmentCounts['assignedTo'] ?? 0;
-            user['assignedForCount'] = assignmentCounts['assignedFor'] ?? 0;
+            // Get assignment counts from user's own arrays (populated by backend)
+            // "Assigned to" = users who assigned TO this user (assignedBy array)
+            // "Assigned for" = users assigned FOR this user to collect money (assignedUsers array)
+            final assignedBy = user['assignedBy'] as List<dynamic>? ?? [];
+            final assignedUsers = user['assignedUsers'] as List<dynamic>? ?? [];
+            
+            user['assignedToCount'] = assignedBy.length;
+            user['assignedForCount'] = assignedUsers.length;
           } else {
             // Default to 0 if no userId
             user['assignedToCount'] = 0;
@@ -105,37 +108,6 @@ class _IpoAssignWalletsScreenState extends State<IpoAssignWalletsScreen> {
     }
   }
 
-  Future<Map<String, int>> _getAssignmentCounts(String userId) async {
-    try {
-      // Get collections where user is assigned receiver (assigned to)
-      // This counts collections where money is assigned TO this user
-      final assignedToResult = await CollectionService.getCollections(
-        assignedReceiver: userId,
-      );
-      final assignedToCount = (assignedToResult['collections'] as List<dynamic>?)?.length ?? 0;
-      
-      // Get collections where user is assigned receiver (assigned for)
-      // "Assigned for" means collections where someone collected money FOR this user
-      // This counts all collections where assignedReceiver = this user
-      // When User1 collects FOR Super Admin, this count increases
-      final assignedForResult = await CollectionService.getCollections(
-        assignedReceiver: userId,
-      );
-      final assignedForCount = (assignedForResult['collections'] as List<dynamic>?)?.length ?? 0;
-      
-      return {
-        'assignedTo': assignedToCount,
-        'assignedFor': assignedForCount,
-      };
-    } catch (e) {
-      print('❌ [ASSIGN WALLETS] Error fetching assignment counts for user $userId: $e');
-      // Return default values on error
-      return {
-        'assignedTo': 0,
-        'assignedFor': 0,
-      };
-    }
-  }
 
   void _filterUsers() {
     final query = _searchController.text.toLowerCase();
@@ -901,48 +873,67 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
     _selectedImageUrl = widget.initialImageUrl;
     _assignedForSearchController.addListener(_filterAssignedForUsers);
     
-    // Try to load from initial user data first
+    // Try to load from initial user data first (this will also call _loadActiveUsers)
     _loadAssignedToFromInitialUser();
-    _loadActiveUsers();
-    // Then refresh from API
+    // Then refresh from API (this will also call _loadActiveUsers at the end)
     _loadAssignedToUsers();
   }
   
   void _loadAssignedToFromInitialUser() {
     try {
-      // Check if initial user already has assignedBy data
-      final assignedBy = (widget.initialUser['assignedBy'] as List<dynamic>?) ?? [];
-      if (assignedBy.isNotEmpty) {
-        print('✅ [ASSIGN WALLETS] Found assignedBy in initial user data: ${assignedBy.length}');
-        final assignedByUsers = assignedBy.map((ab) {
-          if (ab is Map<String, dynamic>) {
-            return <String, dynamic>{
-              'id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
-              '_id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
-              'name': ab['name']?.toString() ?? 'Unknown',
-              'email': ab['email']?.toString() ?? '',
-              'role': ab['role']?.toString() ?? '',
-            };
-          }
-          return <String, dynamic>{};
-        }).where((u) => u.isNotEmpty && (u['id']?.toString().isNotEmpty == true)).toList();
-        
-        // Also check assignedUsers
-        final assignedUsers = (widget.initialUser['assignedUsers'] as List<dynamic>?) ?? [];
-        final assignedUserIds = assignedUsers.map((au) {
-          if (au is Map<String, dynamic>) {
-            return au['_id']?.toString() ?? au['id']?.toString() ?? '';
-          }
-          return au.toString();
-        }).where((id) => id.isNotEmpty).toSet();
-        
-        setState(() {
-          _assignedToUsers = assignedByUsers;
-          _selectedUserIds = assignedUserIds;
-        });
-        
-        print('✅ [ASSIGN WALLETS] Loaded ${_assignedToUsers.length} assignedBy users from initial data');
-      }
+      final selectedUserId = widget.initialUser['_id']?.toString() ?? widget.initialUser['id']?.toString() ?? '';
+      
+      // Try to find the user in allUsers list (which has populated arrays)
+      final userFromAll = widget.allUsers.firstWhere(
+        (u) {
+          final userId = u['_id']?.toString() ?? u['id']?.toString() ?? '';
+          return userId == selectedUserId;
+        },
+        orElse: () => widget.initialUser, // Fallback to initial user if not found
+      );
+      
+      // Always initialize from user data (even if arrays are empty)
+      // Check if user has assignedBy data
+      final assignedBy = (userFromAll['assignedBy'] as List<dynamic>?) ?? [];
+      print('✅ [ASSIGN WALLETS] Loading assignedBy from user data: ${assignedBy.length} items');
+      
+      final assignedByUsers = assignedBy.map((ab) {
+        if (ab is Map<String, dynamic>) {
+          return <String, dynamic>{
+            'id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
+            '_id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
+            'name': ab['name']?.toString() ?? 'Unknown',
+            'email': ab['email']?.toString() ?? '',
+            'role': ab['role']?.toString() ?? '',
+          };
+        }
+        return <String, dynamic>{};
+      }).where((u) => u.isNotEmpty && (u['id']?.toString().isNotEmpty == true)).toList();
+      
+      // Also check assignedUsers (users assigned FOR this user)
+      final assignedUsers = (userFromAll['assignedUsers'] as List<dynamic>?) ?? [];
+      print('✅ [ASSIGN WALLETS] Loading assignedUsers from user data: ${assignedUsers.length} items');
+      
+      final assignedUserIds = assignedUsers.map((au) {
+        if (au is Map<String, dynamic>) {
+          return au['_id']?.toString() ?? au['id']?.toString() ?? '';
+        }
+        return au.toString();
+      }).where((id) => id.isNotEmpty).toSet();
+      
+      // Remove any selected users that are in "Assigned to" (assignedBy)
+      final assignedToUserIds = assignedByUsers.map((u) => u['_id']?.toString() ?? u['id']?.toString() ?? '').toSet();
+      final filteredAssignedUserIds = assignedUserIds.where((id) => !assignedToUserIds.contains(id)).toSet();
+      
+      setState(() {
+        _assignedToUsers = assignedByUsers;
+        _selectedUserIds = filteredAssignedUserIds;
+      });
+      
+      // Reload active users after assignedTo is updated to filter them out
+      _loadActiveUsers();
+      
+      print('✅ [ASSIGN WALLETS] Loaded ${_assignedToUsers.length} assignedBy users and ${_selectedUserIds.length} assignedUsers from initial data');
     } catch (e) {
       print('⚠️ [ASSIGN WALLETS] Error loading from initial user: $e');
     }
@@ -958,7 +949,79 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
       
       print('🔍 [ASSIGN WALLETS] Loading assigned to users for: $selectedUserId');
       
-      // Get user data with assignedBy populated
+      // Use the allUsers list passed to the dialog (already has populated arrays)
+      // First try to find current user in widget.allUsers
+      final currentUserFromAll = widget.allUsers.firstWhere(
+        (u) {
+          final userId = u['_id']?.toString() ?? u['id']?.toString() ?? '';
+          return userId == selectedUserId;
+        },
+        orElse: () => <String, dynamic>{},
+      );
+      
+      if (currentUserFromAll.isNotEmpty) {
+        print('✅ [ASSIGN WALLETS] Found current user in allUsers: ${currentUserFromAll['name']}');
+        
+        // Get assignedBy - should be populated objects from backend
+        final assignedBy = (currentUserFromAll['assignedBy'] as List<dynamic>?) ?? [];
+        print('   assignedBy count: ${assignedBy.length}');
+        
+        final assignedByUsers = <Map<String, dynamic>>[];
+        for (final ab in assignedBy) {
+          if (ab is Map<String, dynamic>) {
+            // Already populated object from backend
+            final userMap = <String, dynamic>{
+              'id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
+              '_id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
+              'name': ab['name']?.toString() ?? 'Unknown',
+              'email': ab['email']?.toString() ?? '',
+              'role': ab['role']?.toString() ?? '',
+            };
+            if (userMap['id']?.toString().isNotEmpty == true) {
+              assignedByUsers.add(userMap);
+              print('   ✅ Added assignedBy user: ${userMap['name']} (${userMap['id']})');
+            }
+          }
+        }
+        
+        print('   Final assignedByUsers count: ${assignedByUsers.length}');
+        
+        // Also load existing assigned users (users assigned FOR this user)
+        final assignedUsers = (currentUserFromAll['assignedUsers'] as List<dynamic>?) ?? [];
+        final assignedUserIds = assignedUsers.map((au) {
+          if (au is Map<String, dynamic>) {
+            return au['_id']?.toString() ?? au['id']?.toString() ?? '';
+          }
+          return au.toString();
+        }).where((id) => id.isNotEmpty).toSet();
+        
+        print('   Existing assignedUsers count: ${assignedUserIds.length}');
+        if (assignedUserIds.isNotEmpty) {
+          print('   assignedUsers IDs: ${assignedUserIds.toList()}');
+        }
+        
+        // Remove any selected users that are in "Assigned to" (assignedBy)
+        final assignedToUserIds = assignedByUsers.map((u) => u['_id']?.toString() ?? u['id']?.toString() ?? '').toSet();
+        final filteredAssignedUserIds = assignedUserIds.where((id) => !assignedToUserIds.contains(id)).toSet();
+        
+        if (assignedUserIds.length != filteredAssignedUserIds.length) {
+          print('   ⚠️  Removed ${assignedUserIds.length - filteredAssignedUserIds.length} user(s) from selected list (already in Assigned to)');
+        }
+        
+        setState(() {
+          _assignedToUsers = assignedByUsers;
+          _selectedUserIds = filteredAssignedUserIds;
+        });
+        
+        // Reload active users after assignedTo is updated to filter them out
+        _loadActiveUsers();
+        
+        print('✅ [ASSIGN WALLETS] Updated state with ${_assignedToUsers.length} assignedBy users and ${_selectedUserIds.length} assignedUsers');
+        return;
+      }
+      
+      // Fallback: If not found in allUsers, fetch from API
+      print('⚠️ [ASSIGN WALLETS] User not found in allUsers, fetching from API...');
       final result = await UserService.getUsers();
       if (result['success'] == true) {
         final users = (result['users'] as List<dynamic>?)?.map((u) => u as Map<String, dynamic>).toList() ?? [];
@@ -977,29 +1040,11 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
           return;
         }
         
-        print('✅ [ASSIGN WALLETS] Found current user: ${currentUser['name']}');
-        print('   Current user ID: ${currentUser['_id'] ?? currentUser['id']}');
-        print('   assignedBy field: ${currentUser['assignedBy']}');
-        print('   assignedBy is null: ${currentUser['assignedBy'] == null}');
-        print('   assignedBy is empty list: ${currentUser['assignedBy'] is List && (currentUser['assignedBy'] as List).isEmpty}');
-        print('   assignedBy type: ${currentUser['assignedBy']?.runtimeType}');
-        print('   All current user keys: ${currentUser.keys.toList()}');
-        
         // Get assignedBy - should be populated objects from backend
         final assignedBy = (currentUser['assignedBy'] as List<dynamic>?) ?? [];
-        print('   assignedBy count: ${assignedBy.length}');
-        
-        if (assignedBy.isEmpty && currentUser.containsKey('assignedBy')) {
-          print('   ⚠️ assignedBy field exists but is empty or null');
-        }
-        if (!currentUser.containsKey('assignedBy')) {
-          print('   ⚠️ assignedBy field does not exist in user object');
-        }
-        
         final assignedByUsers = <Map<String, dynamic>>[];
         for (final ab in assignedBy) {
           if (ab is Map<String, dynamic>) {
-            // Already populated object from backend
             final userMap = <String, dynamic>{
               'id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
               '_id': ab['_id']?.toString() ?? ab['id']?.toString() ?? '',
@@ -1009,28 +1054,9 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
             };
             if (userMap['id']?.toString().isNotEmpty == true) {
               assignedByUsers.add(userMap);
-              print('   ✅ Added assignedBy user: ${userMap['name']} (${userMap['id']})');
-            }
-          } else if (ab != null) {
-            // ObjectId string - find user in users list
-            final abId = ab.toString();
-            final foundUser = users.firstWhere(
-              (u) {
-                final userId = u['_id']?.toString() ?? u['id']?.toString() ?? '';
-                return userId == abId;
-              },
-              orElse: () => <String, dynamic>{},
-            );
-            if (foundUser.isNotEmpty) {
-              assignedByUsers.add(foundUser);
-              print('   ✅ Found and added assignedBy user: ${foundUser['name']}');
-            } else {
-              print('   ⚠️ Could not find user with ID: $abId');
             }
           }
         }
-        
-        print('   Final assignedByUsers count: ${assignedByUsers.length}');
         
         // Also load existing assigned users
         final assignedUsers = (currentUser['assignedUsers'] as List<dynamic>?) ?? [];
@@ -1041,14 +1067,17 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
           return au.toString();
         }).where((id) => id.isNotEmpty).toSet();
         
-        print('   Existing assignedUsers count: ${assignedUserIds.length}');
+        // Remove any selected users that are in "Assigned to" (assignedBy)
+        final assignedToUserIds = assignedByUsers.map((u) => u['_id']?.toString() ?? u['id']?.toString() ?? '').toSet();
+        final filteredAssignedUserIds = assignedUserIds.where((id) => !assignedToUserIds.contains(id)).toSet();
         
         setState(() {
           _assignedToUsers = assignedByUsers;
-          _selectedUserIds = assignedUserIds;
+          _selectedUserIds = filteredAssignedUserIds;
         });
         
-        print('✅ [ASSIGN WALLETS] Updated state with ${_assignedToUsers.length} assignedBy users');
+        // Reload active users after assignedTo is updated to filter them out
+        _loadActiveUsers();
       } else {
         print('❌ [ASSIGN WALLETS] Failed to get users: ${result['message']}');
       }
@@ -1067,10 +1096,17 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
   void _loadActiveUsers() {
     setState(() {
       final selectedUserId = _selectedUser['_id']?.toString() ?? _selectedUser['id']?.toString() ?? '';
+      
+      // Get IDs of users in "Assigned to" (assignedBy) to exclude them from "Assigned for"
+      final assignedToUserIds = _assignedToUsers.map((user) {
+        return user['_id']?.toString() ?? user['id']?.toString() ?? '';
+      }).toSet();
+      
       _activeUsers = widget.allUsers.where((user) {
         final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
-        // Exclude the selected user from assigned for list
-        return user['isVerified'] == true && userId != selectedUserId;
+        // Exclude the selected user and users in "Assigned to" from assigned for list
+        final isInAssignedTo = assignedToUserIds.contains(userId);
+        return user['isVerified'] == true && userId != selectedUserId && !isInAssignedTo;
       }).toList();
       _filteredAssignedForUsers = _activeUsers;
     });
@@ -1091,7 +1127,40 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
     });
   }
 
+  // Method to check and display current selection status
+  void _checkSelectionStatus() {
+    print('\n📊 ===== CURRENT SELECTION STATUS =====');
+    print('   Total Selected: ${_selectedUserIds.length}');
+    print('   Selected User IDs: ${_selectedUserIds.toList()}');
+    
+    if (_selectedUserIds.isEmpty) {
+      print('   ⚠️  NO USERS SELECTED!');
+    } else {
+      print('   Selected Users Details:');
+      for (final selectedId in _selectedUserIds) {
+        final selectedUser = _activeUsers.firstWhere(
+          (u) {
+            final uid = u['_id']?.toString() ?? u['id']?.toString() ?? '';
+            return uid == selectedId;
+          },
+          orElse: () => <String, dynamic>{},
+        );
+        if (selectedUser.isNotEmpty) {
+          final name = selectedUser['name']?.toString() ?? 'Unknown';
+          final email = selectedUser['email']?.toString() ?? '';
+          print('      ✓ $name ($email) - ID: $selectedId');
+        } else {
+          print('      ⚠️  User not found - ID: $selectedId');
+        }
+      }
+    }
+    print('========================================\n');
+  }
+
   Future<void> _saveAssignments(BuildContext context) async {
+    // Check selection status before saving
+    _checkSelectionStatus();
+    
     // Show loading
     showDialog(
       context: context,
@@ -1104,44 +1173,92 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
     try {
       final selectedUserId = _selectedUser['_id']?.toString() ?? _selectedUser['id']?.toString() ?? '';
       
-      // Save user assignments (assigned for)
-      if (_selectedUserIds.isNotEmpty && selectedUserId.isNotEmpty) {
-        final assignedUserIdsList = _selectedUserIds.toList();
-        final assignmentResult = await UserService.updateUserAssignments(
-          userId: selectedUserId,
-          assignedUserIds: assignedUserIdsList,
-        );
-        
-        if (assignmentResult['success'] != true) {
-          if (context.mounted) {
-            Navigator.of(context).pop(); // Close loading
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        assignmentResult['message'] ?? 'Failed to update assignments',
-                      ),
-                    ),
-                  ],
-                ),
-                backgroundColor: AppTheme.errorColor,
-                duration: const Duration(seconds: 3),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            );
-          }
-          return;
+      // Validate selectedUserId
+      if (selectedUserId.isEmpty) {
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Close loading
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Invalid user ID'),
+              backgroundColor: AppTheme.errorColor,
+              duration: const Duration(seconds: 3),
+            ),
+          );
         }
+        return;
+      }
+      
+      // Save user assignments (assigned for) - always call API, even with empty array to clear assignments
+      final assignedUserIdsList = _selectedUserIds.toList();
+      
+      // Debug logging with detailed info
+      print('\n🔍 ===== [SAVE ASSIGNMENTS] DEBUG INFO =====');
+      print('   Target User ID: $selectedUserId');
+      print('   Target User Name: $_selectedUserName');
+      print('   Selected User IDs Count: ${_selectedUserIds.length}');
+      print('   Selected User IDs Set: $_selectedUserIds');
+      print('   Selected User IDs List: $assignedUserIdsList');
+      
+      // Get user names for selected IDs for better logging
+      if (_selectedUserIds.isNotEmpty) {
+        print('   Selected Users Details:');
+        for (final selectedId in _selectedUserIds) {
+          final selectedUser = _activeUsers.firstWhere(
+            (u) {
+              final uid = u['_id']?.toString() ?? u['id']?.toString() ?? '';
+              return uid == selectedId;
+            },
+            orElse: () => <String, dynamic>{},
+          );
+          if (selectedUser.isNotEmpty) {
+            final name = selectedUser['name']?.toString() ?? 'Unknown';
+            final email = selectedUser['email']?.toString() ?? '';
+            print('      - $name ($email) - ID: $selectedId');
+          } else {
+            print('      - User not found in activeUsers list - ID: $selectedId');
+          }
+        }
+      } else {
+        print('   ⚠️  WARNING: No users selected! assignedUserIds will be empty array.');
+      }
+      print('==========================================\n');
+      
+      print('📤 [SAVE ASSIGNMENTS] Calling API...');
+      final assignmentResult = await UserService.updateUserAssignments(
+        userId: selectedUserId,
+        assignedUserIds: assignedUserIdsList,
+      );
+      print('📥 [SAVE ASSIGNMENTS] API Response received');
+      
+      if (assignmentResult['success'] != true) {
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Close loading
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      assignmentResult['message'] ?? 'Failed to update assignments',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppTheme.errorColor,
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+        }
+        return;
       }
       
       if (context.mounted) {
@@ -1150,6 +1267,10 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
         
         // Refresh parent screen to reload user data
         widget.onSaved?.call();
+        
+        final message = _selectedUserIds.isEmpty
+            ? 'Successfully cleared all assignments for $_selectedUserName'
+            : 'Successfully assigned ${_selectedUserIds.length} user(s) for $_selectedUserName';
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1161,9 +1282,7 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    'Successfully assigned ${_selectedUserIds.length} user(s) for $_selectedUserName',
-                  ),
+                  child: Text(message),
                 ),
               ],
             ),
@@ -1241,11 +1360,9 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
       _selectedImageUrl = imageUrl;
     });
     
-    // Update assigned for list to exclude the selected user
-    _loadActiveUsers();
     // Clear search when user changes
     _assignedForSearchController.clear();
-    // Reload assigned to users for the new user
+    // Reload assigned to users for the new user (this will also call _loadActiveUsers at the end)
     _loadAssignedToUsers();
   }
 
@@ -1605,6 +1722,40 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                         ),
                       ),
                     ),
+                    // Visual indicator for selection status
+                    if (_selectedUserIds.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.secondaryColor.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppTheme.secondaryColor,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: AppTheme.secondaryColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_selectedUserIds.length} selected',
+                              style: AppTheme.bodySmall.copyWith(
+                                color: AppTheme.secondaryColor,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (_assignedToUsers.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Container(
@@ -1626,6 +1777,96 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                // Selection Status Card - Show current selections
+                if (_selectedUserIds.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.secondaryColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppTheme.secondaryColor.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
+                              color: AppTheme.secondaryColor,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Currently Selected (${_selectedUserIds.length}):',
+                              style: AppTheme.bodySmall.copyWith(
+                                color: AppTheme.secondaryColor,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: _selectedUserIds.map((selectedId) {
+                            final selectedUser = _activeUsers.firstWhere(
+                              (u) {
+                                final uid = u['_id']?.toString() ?? u['id']?.toString() ?? '';
+                                return uid == selectedId;
+                              },
+                              orElse: () => <String, dynamic>{},
+                            );
+                            final name = selectedUser.isNotEmpty
+                                ? (selectedUser['name']?.toString() ?? 'Unknown')
+                                : 'User ID: $selectedId';
+                            
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppTheme.secondaryColor,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedUserIds.remove(selectedId);
+                                        print('❌ [REMOVE] Removed from selection: $name ($selectedId)');
+                                        print('   Current selected count: ${_selectedUserIds.length}');
+                                      });
+                                    },
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
                 // Search bar at the top for mobile
                 TextField(
                   controller: _assignedForSearchController,
@@ -1691,87 +1932,161 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                             final userRole = user['role']?.toString() ?? '';
                             final roleColor = _getRoleColor(userRole);
                             final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+                            
+                            // Debug: Log if userId is empty
+                            if (userId.isEmpty) {
+                              print('⚠️ [WARNING] User has empty ID: $userName - _id: ${user['_id']}, id: ${user['id']}');
+                            }
+                            
                             final isSelected = _selectedUserIds.contains(userId);
                             
-                            return ListTile(
-                              dense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
+                            // Debug: Log selection status when building list
+                            if (isSelected) {
+                              print('   ✓ User is SELECTED: $userName ($userId)');
+                            }
+                            
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 4),
+                              decoration: BoxDecoration(
+                                color: isSelected 
+                                    ? AppTheme.secondaryColor.withValues(alpha: 0.1)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: isSelected
+                                    ? Border.all(
+                                        color: AppTheme.secondaryColor,
+                                        width: 1.5,
+                                      )
+                                    : null,
                               ),
-                              leading: CircleAvatar(
-                                radius: 16,
-                                backgroundColor: roleColor.withValues(alpha: 0.2),
-                                child: Text(
-                                  userName.isNotEmpty
-                                      ? userName.substring(0, 1).toUpperCase()
-                                      : '?',
-                                  style: TextStyle(
-                                    color: roleColor,
-                                    fontWeight: FontWeight.w700,
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                leading: Stack(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: isSelected
+                                          ? AppTheme.secondaryColor.withValues(alpha: 0.2)
+                                          : roleColor.withValues(alpha: 0.2),
+                                      child: Text(
+                                        userName.isNotEmpty
+                                            ? userName.substring(0, 1).toUpperCase()
+                                            : '?',
+                                        style: TextStyle(
+                                          color: isSelected ? AppTheme.secondaryColor : roleColor,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      Positioned(
+                                        right: -2,
+                                        bottom: -2,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: const BoxDecoration(
+                                            color: AppTheme.secondaryColor,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.check,
+                                            size: 12,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        userName,
+                                        style: AppTheme.bodyMedium.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                          color: isSelected ? AppTheme.secondaryColor : null,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (isSelected) ...[
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.check_circle,
+                                        size: 16,
+                                        color: AppTheme.secondaryColor,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  userEmail,
+                                  style: AppTheme.bodySmall.copyWith(
+                                    color: AppTheme.textSecondary,
                                     fontSize: 12,
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              title: Text(
-                                userName,
-                                style: AppTheme.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: Text(
-                                userEmail,
-                                style: AppTheme.bodySmall.copyWith(
-                                  color: AppTheme.textSecondary,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      userRole,
-                                      style: AppTheme.bodySmall.copyWith(
-                                        color: roleColor,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        userRole,
+                                        style: AppTheme.bodySmall.copyWith(
+                                          color: roleColor,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.end,
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.end,
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Checkbox(
-                                    value: isSelected,
-                                    onChanged: (value) {
-                                      setState(() {
-                                        if (value == true) {
-                                          _selectedUserIds.add(userId);
-                                        } else {
-                                          _selectedUserIds.remove(userId);
-                                        }
-                                      });
-                                    },
-                                    activeColor: AppTheme.primaryColor,
-                                  ),
-                                ],
+                                    const SizedBox(width: 8),
+                                    Checkbox(
+                                      value: isSelected,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          if (value == true) {
+                                            _selectedUserIds.add(userId);
+                                            print('✅ [SELECT] Added user: $userName ($userId)');
+                                            print('   Current selected count: ${_selectedUserIds.length}');
+                                            _checkSelectionStatus(); // Check status after selection
+                                          } else {
+                                            _selectedUserIds.remove(userId);
+                                            print('❌ [DESELECT] Removed user: $userName ($userId)');
+                                            print('   Current selected count: ${_selectedUserIds.length}');
+                                            _checkSelectionStatus(); // Check status after deselection
+                                          }
+                                        });
+                                      },
+                                      activeColor: AppTheme.primaryColor,
+                                    ),
+                                  ],
+                                ),
+                                onTap: () {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedUserIds.remove(userId);
+                                      print('❌ [TAP DESELECT] Removed user: $userName ($userId)');
+                                    } else {
+                                      _selectedUserIds.add(userId);
+                                      print('✅ [TAP SELECT] Added user: $userName ($userId)');
+                                    }
+                                    print('   Current selected count: ${_selectedUserIds.length}');
+                                    _checkSelectionStatus(); // Check status after tap
+                                  });
+                                },
                               ),
-                              onTap: () {
-                                setState(() {
-                                  if (isSelected) {
-                                    _selectedUserIds.remove(userId);
-                                  } else {
-                                    _selectedUserIds.add(userId);
-                                  }
-                                });
-                              },
                             );
                           },
                         ),

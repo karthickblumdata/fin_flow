@@ -11,6 +11,7 @@ import '../../widgets/add_amount_dialog.dart';
 import '../../widgets/add_collection_dialog.dart';
 import '../../widgets/add_expense_dialog.dart';
 import '../../widgets/add_transaction_dialog.dart';
+import '../../widgets/assign_wallet_dialog.dart';
 import '../../services/auth_service.dart';
 
 const double _walletCardMobileWidth = 260;
@@ -1218,6 +1219,9 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
           onAddTransaction: () {
             _handleAddTransaction(context, userId, userName);
           },
+          onAssignWallet: () {
+            _handleAssignWallet(context, userId, userName);
+          },
         );
       },
     );
@@ -1295,6 +1299,26 @@ class _AllUserWalletsScreenState extends State<AllUserWalletsScreen> {
         );
       },
     );
+  }
+
+  void _handleAssignWallet(BuildContext context, String userId, String userName) {
+    // Show Assign Wallet dialog using root navigator to ensure it works after bottom sheet closes
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      useRootNavigator: true,
+      builder: (dialogContext) {
+        return AssignWalletDialog(
+          userId: userId,
+          userName: userName,
+        );
+      },
+    ).then((success) {
+      if (success == true) {
+        // Refresh wallets after successful assignment
+        _loadWallets();
+      }
+    });
   }
 
   double _parseAmount(dynamic value) {

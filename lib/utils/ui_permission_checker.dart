@@ -333,6 +333,7 @@ class UIPermissionChecker {
       'smartApprovals': 'smart_approvals.transaction.view',
       'users': 'all_users.user_management.view',
       'roles': 'all_users.roles.view',
+      'assignWallets': 'all_users.assign_wallet',
       'paymentModes': 'accounts.payment_modes.view',
       'accountReports': 'accounts.view',
       'expenseType': 'expenses.type.view',
@@ -559,6 +560,35 @@ class UIPermissionChecker {
         print('   Menu Key: $menuKey');
         print('   User Role: $userRole');
         print('   Final Access: ✅ YES (wallet.report.view or wallet.report found)');
+        print('==============================================\n');
+      }
+      
+      return hasAccess;
+    }
+    
+    // For assignWallets, STRICT CHECK: Only check all_users.assign_wallet permission
+    // If all_users.assign_wallet is checked → Show Assign Wallets screen
+    // If NOT checked → Hide Assign Wallets screen
+    if (menuKey == 'assignWallets') {
+      final hasAccess = permissions.any((p) => 
+        p == 'all_users.assign_wallet' ||
+        p.startsWith('all_users.assign_wallet.')
+      );
+      
+      // Debug logging for assignWallets permission check
+      if (!hasAccess) {
+        print('\n🔍 ===== ASSIGN WALLETS PERMISSION CHECK =====');
+        print('   Menu Key: $menuKey');
+        print('   User Role: $userRole');
+        print('   Required Permission: all_users.assign_wallet');
+        print('   User Permissions Count: ${permissions.length}');
+        print('   Final Access: ❌ NO (all_users.assign_wallet not found)');
+        print('==============================================\n');
+      } else {
+        print('\n✅ ===== ASSIGN WALLETS PERMISSION CHECK =====');
+        print('   Menu Key: $menuKey');
+        print('   User Role: $userRole');
+        print('   Final Access: ✅ YES (all_users.assign_wallet found)');
         print('==============================================\n');
       }
       
