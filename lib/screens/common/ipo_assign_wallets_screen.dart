@@ -857,6 +857,8 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
   final TextEditingController _assignedForSearchController = TextEditingController();
   List<Map<String, dynamic>> _filteredAssignedForUsers = [];
   List<Map<String, dynamic>> _activeUsers = [];
+  List<Map<String, dynamic>> _remainingUnassignedUsers = []; // Users not assigned anywhere
+  List<Map<String, dynamic>> _filteredRemainingUsers = []; // Filtered remaining users
   final GlobalKey _dropdownButtonKey = GlobalKey();
   Set<String> _selectedUserIds = {}; // Track selected user IDs
   List<Map<String, dynamic>> _assignedToUsers = []; // Users who assigned this user
@@ -1097,18 +1099,31 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
     setState(() {
       final selectedUserId = _selectedUser['_id']?.toString() ?? _selectedUser['id']?.toString() ?? '';
       
-      // Get IDs of users in "Assigned to" (assignedBy) to exclude them from "Assigned for"
+      // Get IDs of users in "Assigned to" (assignedBy) to exclude them
       final assignedToUserIds = _assignedToUsers.map((user) {
         return user['_id']?.toString() ?? user['id']?.toString() ?? '';
       }).toSet();
       
-      _activeUsers = widget.allUsers.where((user) {
+      // Get all active users (excluding selected user and users in "Assigned to")
+      final allActiveUsers = widget.allUsers.where((user) {
         final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
-        // Exclude the selected user and users in "Assigned to" from assigned for list
         final isInAssignedTo = assignedToUserIds.contains(userId);
         return user['isVerified'] == true && userId != selectedUserId && !isInAssignedTo;
       }).toList();
+      
+      // Separate into "Assigned for" (selected) and "Remaining Unassigned" (not selected)
+      _activeUsers = allActiveUsers.where((user) {
+        final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+        return _selectedUserIds.contains(userId);
+      }).toList();
+      
+      _remainingUnassignedUsers = allActiveUsers.where((user) {
+        final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+        return !_selectedUserIds.contains(userId);
+      }).toList();
+      
       _filteredAssignedForUsers = _activeUsers;
+      _filteredRemainingUsers = _remainingUnassignedUsers;
     });
   }
 
@@ -1116,6 +1131,17 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
     final query = _assignedForSearchController.text.toLowerCase();
     setState(() {
       _filteredAssignedForUsers = _activeUsers.where((user) {
+        final name = (user['name'] ?? '').toLowerCase();
+        final email = (user['email'] ?? '').toLowerCase();
+        final role = (user['role'] ?? '').toLowerCase();
+        return query.isEmpty ||
+            name.contains(query) ||
+            email.contains(query) ||
+            role.contains(query);
+      }).toList();
+      
+      // Also filter remaining unassigned users
+      _filteredRemainingUsers = _remainingUnassignedUsers.where((user) {
         final name = (user['name'] ?? '').toLowerCase();
         final email = (user['email'] ?? '').toLowerCase();
         final role = (user['role'] ?? '').toLowerCase();
@@ -1437,12 +1463,13 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
           ? const EdgeInsets.symmetric(horizontal: 16, vertical: 24)
           : const EdgeInsets.all(24),
       child: Container(
-        width: widget.isMobile ? screenWidth : 600,
+        width: widget.isMobile ? screenWidth : 1200,
+        height: widget.isMobile ? null : 700,
         constraints: BoxConstraints(
           maxHeight: widget.isMobile 
               ? screenHeight * 0.9 
-              : screenHeight * 0.8,
-          maxWidth: widget.isMobile ? screenWidth - 32 : 600,
+              : 700,
+          maxWidth: widget.isMobile ? screenWidth - 32 : 1200,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2060,13 +2087,13 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                                             _selectedUserIds.add(userId);
                                             print('✅ [SELECT] Added user: $userName ($userId)');
                                             print('   Current selected count: ${_selectedUserIds.length}');
-                                            _checkSelectionStatus(); // Check status after selection
                                           } else {
                                             _selectedUserIds.remove(userId);
                                             print('❌ [DESELECT] Removed user: $userName ($userId)');
                                             print('   Current selected count: ${_selectedUserIds.length}');
-                                            _checkSelectionStatus(); // Check status after deselection
                                           }
+                                          _loadActiveUsers(); // Recalculate lists
+                                          _checkSelectionStatus(); // Check status after selection
                                         });
                                       },
                                       activeColor: AppTheme.primaryColor,
@@ -2083,6 +2110,7 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                                       print('✅ [TAP SELECT] Added user: $userName ($userId)');
                                     }
                                     print('   Current selected count: ${_selectedUserIds.length}');
+                                    _loadActiveUsers(); // Recalculate lists
                                     _checkSelectionStatus(); // Check status after tap
                                   });
                                 },
@@ -2090,6 +2118,144 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                             );
                           },
                         ),
+                ),
+                // Remaining Unassigned section
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      top: BorderSide(
+                        color: AppTheme.borderColor.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.people_outline,
+                            size: 18,
+                            color: AppTheme.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Remaining Unassigned',
+                            style: AppTheme.headingSmall.copyWith(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.textSecondary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_remainingUnassignedUsers.length}',
+                              style: AppTheme.bodySmall.copyWith(
+                                color: AppTheme.textSecondary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.3,
+                        ),
+                        child: _filteredRemainingUsers.isEmpty
+                            ? Container(
+                                height: 80,
+                                alignment: Alignment.center,
+                                child: Text(
+                                  'No remaining users',
+                                  style: AppTheme.bodyMedium.copyWith(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: _filteredRemainingUsers.length,
+                                itemBuilder: (context, index) {
+                                  final user = _filteredRemainingUsers[index];
+                                  final userName = user['name']?.toString() ?? 'Unknown';
+                                  final userEmail = user['email']?.toString() ?? '';
+                                  final userRole = user['role']?.toString() ?? '';
+                                  final roleColor = _getRoleColor(userRole);
+                                  final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+                                  
+                                  return ListTile(
+                                    dense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    leading: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: roleColor.withValues(alpha: 0.2),
+                                      child: Text(
+                                        userName.isNotEmpty
+                                            ? userName.substring(0, 1).toUpperCase()
+                                            : '?',
+                                        style: TextStyle(
+                                          color: roleColor,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    title: Text(
+                                      userName,
+                                      style: AppTheme.bodyMedium.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      userEmail,
+                                      style: AppTheme.bodySmall.copyWith(
+                                        color: AppTheme.textSecondary,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    trailing: Text(
+                                      userRole,
+                                      style: AppTheme.bodySmall.copyWith(
+                                        color: roleColor,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onTap: () {
+                                      // Move user from remaining to assigned for
+                                      setState(() {
+                                        _selectedUserIds.add(userId);
+                                        _loadActiveUsers(); // Recalculate lists
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
                 // Cancel and Save buttons
                 const SizedBox(height: 16),
@@ -2157,7 +2323,10 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
 
   Widget _buildDesktopLayout(BuildContext context) {
     return Container(
-      height: 400,
+      constraints: BoxConstraints(
+        minHeight: 400,
+        maxHeight: double.infinity,
+      ),
       child: Row(
         children: [
           // Left side - Assigned to
@@ -2266,18 +2435,22 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
               ),
             ),
           ),
-          // Right side - Assigned for
+          // Middle - Assigned for
           Expanded(
             child: Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: const BorderRadius.only(
-                  bottomRight: Radius.circular(20),
+                border: Border(
+                  right: BorderSide(
+                    color: AppTheme.borderColor.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
                 ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     children: [
@@ -2390,6 +2563,7 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                                           } else {
                                             _selectedUserIds.remove(userId);
                                           }
+                                          _loadActiveUsers(); // Recalculate lists
                                         });
                                       },
                                       activeColor: AppTheme.primaryColor,
@@ -2403,6 +2577,7 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                                     } else {
                                       _selectedUserIds.add(userId);
                                     }
+                                    _loadActiveUsers(); // Recalculate lists
                                   });
                                 },
                               );
@@ -2449,53 +2624,182 @@ class _AssignmentDialogContentState extends State<_AssignmentDialogContent> {
                   ),
                   // Cancel and Save buttons
                   const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: BorderSide(
+                                color: AppTheme.borderColor.withValues(alpha: 0.5),
+                              ),
+                            ),
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(
-                              color: AppTheme.borderColor.withValues(alpha: 0.5),
+                          child: Text(
+                            'Cancel',
+                            style: AppTheme.bodyMedium.copyWith(
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
-                        child: Text(
-                          'Cancel',
-                          style: AppTheme.bodyMedium.copyWith(
-                            color: AppTheme.textSecondary,
-                            fontWeight: FontWeight.w600,
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: () => _saveAssignments(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
+                          child: Text(
+                            'Save',
+                            style: AppTheme.bodyMedium.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Right side - Remaining Unassigned Users
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.only(
+                  bottomRight: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.people_outline,
+                        size: 20,
+                        color: AppTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Remaining Unassigned',
+                        style: AppTheme.headingSmall.copyWith(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      ElevatedButton(
-                        onPressed: () => _saveAssignments(context),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primaryColor,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.textSecondary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          'Save',
-                          style: AppTheme.bodyMedium.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
+                          '${_remainingUnassignedUsers.length}',
+                          style: AppTheme.bodySmall.copyWith(
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
                           ),
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Remaining unassigned user list
+                  Expanded(
+                    child: _filteredRemainingUsers.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No remaining users',
+                              style: AppTheme.bodyMedium.copyWith(
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _filteredRemainingUsers.length,
+                            itemBuilder: (context, index) {
+                              final user = _filteredRemainingUsers[index];
+                              final userName = user['name']?.toString() ?? 'Unknown';
+                              final userEmail = user['email']?.toString() ?? '';
+                              final userRole = user['role']?.toString() ?? '';
+                              final roleColor = _getRoleColor(userRole);
+                              
+                              final userId = user['_id']?.toString() ?? user['id']?.toString() ?? '';
+                              
+                              return ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                leading: CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: roleColor.withValues(alpha: 0.2),
+                                  child: Text(
+                                    userName.isNotEmpty
+                                        ? userName.substring(0, 1).toUpperCase()
+                                        : '?',
+                                    style: TextStyle(
+                                      color: roleColor,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                title: Text(
+                                  userName,
+                                  style: AppTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  userEmail,
+                                  style: AppTheme.bodySmall.copyWith(
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: Text(
+                                  userRole,
+                                  style: AppTheme.bodySmall.copyWith(
+                                    color: roleColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                onTap: () {
+                                  // Move user from remaining to assigned for
+                                  setState(() {
+                                    _selectedUserIds.add(userId);
+                                    _loadActiveUsers(); // Recalculate lists
+                                  });
+                                },
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),

@@ -325,6 +325,8 @@ class UIPermissionChecker {
     }
     
     // Map menu keys to permissions
+    // IMPORTANT: Only show navigation items if user has the corresponding permissions
+    // This ensures that only selected permissions in user creation/edit dialog are visible in login page
     final menuPermissionMap = {
       'dashboard': 'dashboard.view',
       'walletSelf': 'wallet.self.view',
@@ -343,8 +345,8 @@ class UIPermissionChecker {
     
     final requiredPermission = menuPermissionMap[menuKey];
     if (requiredPermission == null) {
-      // If menu item not mapped, allow access (backwards compatibility)
-      return true;
+      // If menu item not mapped, deny access (security: only show what's explicitly allowed)
+      return false;
     }
     
     // For smart approvals, check if user has any smart_approvals permission
@@ -375,14 +377,14 @@ class UIPermissionChecker {
       return hasAccess;
     }
     
-    // For walletSelf, STRICT CHECK: Only check wallet.self.view or parent wallet.self
-    // Do NOT check child permissions like wallet.self.transaction.view
-    // If wallet.self.view or wallet.self is checked → Show My Wallet screen
-    // If NOT checked → Hide My Wallet screen
+    // For walletSelf, check if user has wallet.self.view or parent wallet.self
+    // Also check for child permissions like wallet.self.transaction.view, etc.
+    // This ensures if user has any wallet.self.* permission, they can see My Wallet
     if (menuKey == 'walletSelf') {
       final hasAccess = permissions.any((p) => 
         p == 'wallet.self.view' ||
-        p == 'wallet.self'
+        p == 'wallet.self' ||
+        p.startsWith('wallet.self.')
       );
       
       // Debug logging for walletSelf permission check
@@ -390,17 +392,45 @@ class UIPermissionChecker {
         print('\n🔍 ===== MY WALLET PERMISSION CHECK =====');
         print('   Menu Key: $menuKey');
         print('   User Role: $userRole');
-        print('   Required Permission: wallet.self.view or wallet.self');
+        print('   Required Permission: wallet.self.view, wallet.self, or wallet.self.*');
         print('   User Permissions Count: ${permissions.length}');
-        print('   Final Access: ❌ NO (wallet.self.view or wallet.self not found)');
-        print('==========================================\n');
-      } else {
-        print('\n✅ ===== MY WALLET PERMISSION CHECK =====');
-        print('   Menu Key: $menuKey');
-        print('   User Role: $userRole');
-        print('   Final Access: ✅ YES (wallet.self.view or wallet.self found)');
+        print('   User Permissions: $permissions');
+        print('   Final Access: ❌ NO (wallet.self.* permission not found)');
         print('==========================================\n');
       }
+      
+      return hasAccess;
+    }
+    
+    // For walletAll, check if user has wallet.all.view or any wallet.all.* permission
+    if (menuKey == 'walletAll') {
+      final hasAccess = permissions.any((p) => 
+        p == 'wallet.all.view' ||
+        p == 'wallet.all' ||
+        p.startsWith('wallet.all.')
+      );
+      
+      return hasAccess;
+    }
+    
+    // For walletOverview, check if user has wallet.report.view or any wallet.report.* permission
+    if (menuKey == 'walletOverview') {
+      final hasAccess = permissions.any((p) => 
+        p == 'wallet.report.view' ||
+        p == 'wallet.report' ||
+        p.startsWith('wallet.report.')
+      );
+      
+      return hasAccess;
+    }
+    
+    // For dashboard, check if user has dashboard.view or any dashboard.* permission
+    if (menuKey == 'dashboard') {
+      final hasAccess = permissions.any((p) => 
+        p == 'dashboard.view' ||
+        p == 'dashboard' ||
+        p.startsWith('dashboard.')
+      );
       
       return hasAccess;
     }
@@ -595,7 +625,41 @@ class UIPermissionChecker {
       return hasAccess;
     }
     
-    return _hasPermission(permissions, requiredPermission);
+    // For settings, check if user has ANY settings.collection_custom_field permission
+    // This ensures only users with settings permissions can see Settings menu
+    if (menuKey == 'settings') {
+      final hasAccess = permissions.any((p) => 
+        p == 'settings.collection_custom_field.view' ||
+        p == 'settings.collection_custom_field' ||
+        p.startsWith('settings.collection_custom_field.') ||
+        p.startsWith('settings.')
+      );
+      
+      return hasAccess;
+    }
+    
+    // Default: Check exact permission match or parent permission
+    // This ensures that if user has parent permission, they can access the menu item
+    final hasExactPermission = _hasPermission(permissions, requiredPermission);
+    if (hasExactPermission) {
+      return true;
+    }
+    
+    // Check for parent permission (e.g., if required is 'dashboard.view', check for 'dashboard')
+    final permissionParts = requiredPermission.split('.');
+    if (permissionParts.length > 1) {
+      final parentPermission = permissionParts[0];
+      final hasParentPermission = permissions.any((p) => 
+        p == parentPermission || p.startsWith('$parentPermission.')
+      );
+      if (hasParentPermission) {
+        return true;
+      }
+    }
+    
+    // If no match found, deny access (security: only show what's explicitly allowed)
+    // This ensures that only permissions selected in user creation/edit dialog are visible
+    return false;
   }
   
   /// Check if user can view Wallet menu (parent menu)

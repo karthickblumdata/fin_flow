@@ -4063,6 +4063,10 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
         : (approvedBy is String ? approvedBy : null);
     final paymentMode = collection['paymentModeId'] ?? collection['paymentMode'];
     final autoPay = paymentMode is Map ? (paymentMode['autoPay'] ?? false) : false;
+    // Use paymentModeName if available, otherwise fallback to basic mode
+    final modeValue = paymentMode is Map 
+        ? (paymentMode['modeName']?.toString() ?? collection['mode']?.toString() ?? 'Cash')
+        : (collection['mode']?.toString() ?? 'Cash');
     
     return {
       'id': collection['_id'] ?? collection['id'],
@@ -4076,7 +4080,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
       'toId': receiverUserId,
       'amount': _formatCurrency(amountValue),
       'amountValue': amountValue,
-      'mode': _normalizeMode(collection['mode']),
+      'mode': _normalizeMode(modeValue),
       'purpose': collection['customerName'] ?? 'Customer Payment',
       'date': _formatDateLabel(createdAt),
       'createdAt': createdAt,
@@ -4110,6 +4114,11 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
     final approvedByName = approvedBy is Map
         ? (approvedBy['name'] ?? approvedBy['fullName'] ?? approvedBy['displayName'])
         : (approvedBy is String ? approvedBy : null);
+    final paymentMode = transaction['paymentModeId'] ?? transaction['paymentMode'];
+    // Use paymentModeName if available, otherwise fallback to basic mode
+    final modeValue = paymentMode is Map 
+        ? (paymentMode['modeName']?.toString() ?? transaction['mode']?.toString() ?? 'Cash')
+        : (transaction['mode']?.toString() ?? 'Cash');
     
     return {
       'id': transaction['_id'] ?? transaction['id'],
@@ -4121,7 +4130,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
       'toId': receiverUserId,
       'amount': _formatCurrency(amountValue),
       'amountValue': amountValue,
-      'mode': _normalizeMode(transaction['mode']),
+      'mode': _normalizeMode(modeValue),
       'purpose': transaction['purpose'] ?? 'Transfer',
       'date': _formatDateLabel(createdAt),
       'createdAt': createdAt,
@@ -4164,6 +4173,11 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
     // For Purpose field, show expense category/type (e.g., "Travel", "Tea") instead of description
     // This makes it clear what type of expense it is
     final purposeText = expenseCategoryName.isNotEmpty ? expenseCategoryName : 'Expense';
+    final paymentMode = expense['paymentModeId'] ?? expense['paymentMode'];
+    // Use paymentModeName if available, otherwise fallback to basic mode
+    final modeValue = paymentMode is Map 
+        ? (paymentMode['modeName']?.toString() ?? expense['mode']?.toString() ?? 'Cash')
+        : (expense['mode']?.toString() ?? 'Cash');
     
     return {
       'id': expense['_id'] ?? expense['id'],
@@ -4176,7 +4190,7 @@ class _PendingApprovalsScreenContentState extends State<_PendingApprovalsScreenC
       'toId': expenseUserId,
       'amount': _formatCurrency(amountValue),
       'amountValue': amountValue,
-      'mode': _normalizeMode(expense['mode']),
+      'mode': _normalizeMode(modeValue),
       'purpose': purposeText,
       'date': _formatDateLabel(createdAt),
       'createdAt': createdAt,

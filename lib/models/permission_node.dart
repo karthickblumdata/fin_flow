@@ -6,6 +6,7 @@ class PermissionNode {
   bool isSelected;
   bool isExpanded;
   bool? isIndeterminate; // For parent nodes with partial selection
+  final bool isLocked; // For role default permissions (non-editable)
 
   PermissionNode({
     required this.id,
@@ -15,6 +16,7 @@ class PermissionNode {
     this.isSelected = false,
     this.isExpanded = false,
     this.isIndeterminate,
+    this.isLocked = false,
   });
 
   PermissionNode copyWith({
@@ -25,6 +27,7 @@ class PermissionNode {
     bool? isSelected,
     bool? isExpanded,
     bool? isIndeterminate,
+    bool? isLocked,
   }) {
     return PermissionNode(
       id: id ?? this.id,
@@ -34,6 +37,7 @@ class PermissionNode {
       isSelected: isSelected ?? this.isSelected,
       isExpanded: isExpanded ?? this.isExpanded,
       isIndeterminate: isIndeterminate ?? this.isIndeterminate,
+      isLocked: isLocked ?? this.isLocked,
     );
   }
 

@@ -798,23 +798,27 @@ class PermissionTreeBuilder {
   // Apply selected permissions to the tree
   static PermissionNode applyPermissions(
     PermissionNode tree,
-    List<String> selectedPermissionIds,
-  ) {
-    return _applyPermissionsRecursive(tree, selectedPermissionIds);
+    List<String> selectedPermissionIds, {
+    List<String>? lockedPermissionIds,
+  }) {
+    return _applyPermissionsRecursive(tree, selectedPermissionIds, lockedPermissionIds ?? []);
   }
 
   static PermissionNode _applyPermissionsRecursive(
     PermissionNode node,
     List<String> selectedPermissionIds,
+    List<String> lockedPermissionIds,
   ) {
     final isSelected = selectedPermissionIds.contains(node.id);
+    final isLocked = lockedPermissionIds.contains(node.id);
     
     final updatedChildren = node.children.map((child) {
-      return _applyPermissionsRecursive(child, selectedPermissionIds);
+      return _applyPermissionsRecursive(child, selectedPermissionIds, lockedPermissionIds);
     }).toList();
 
     final updatedNode = node.copyWith(
       isSelected: isSelected,
+      isLocked: isLocked,
       children: updatedChildren,
     );
 
