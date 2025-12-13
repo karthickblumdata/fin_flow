@@ -13,6 +13,9 @@ class AddCollectionDialog extends StatefulWidget {
   final String? selectedUserName;
   final String? selectedUserId;
   final List<Map<String, dynamic>>? selectedCustomFields;
+  // Edit mode parameters
+  final String? collectionId;
+  final Map<String, dynamic>? existingData;
 
   const AddCollectionDialog({
     super.key,
@@ -20,6 +23,8 @@ class AddCollectionDialog extends StatefulWidget {
     this.selectedUserName,
     this.selectedUserId,
     this.selectedCustomFields,
+    this.collectionId,
+    this.existingData,
   });
 
   @override
@@ -47,6 +52,34 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
   @override
   void initState() {
     super.initState();
+    
+    // Load existing data if in edit mode
+    if (widget.collectionId != null && widget.existingData != null) {
+      final data = widget.existingData!;
+      final raw = data['raw'] is Map ? Map<String, dynamic>.from(data['raw'] as Map) : <String, dynamic>{};
+      
+      // Pre-fill controllers with existing data
+      _customerNameController.text = raw['customerName']?.toString() ?? data['purpose']?.toString() ?? '';
+      _amountController.text = data['amountValue'] is num ? (data['amountValue'] as num).toString() : '';
+      
+      // Extract receipt number from notes if available
+      final notes = raw['notes']?.toString() ?? '';
+      if (notes.contains('Receipt No:')) {
+        final receiptMatch = RegExp(r'Receipt No:\s*(.+)').firstMatch(notes);
+        if (receiptMatch != null) {
+          _receiptNoController.text = receiptMatch.group(1)?.trim() ?? '';
+        }
+      }
+      
+      // Set payment mode ID if available
+      final paymentMode = raw['paymentModeId'] ?? raw['paymentMode'];
+      if (paymentMode is Map) {
+        _selectedAccountId = (paymentMode['_id'] ?? paymentMode['id'])?.toString();
+      } else if (paymentMode is String) {
+        _selectedAccountId = paymentMode;
+      }
+    }
+    
     // Initialize custom fields from widget parameter
     if (widget.selectedCustomFields != null && widget.selectedCustomFields!.isNotEmpty) {
       _customFields = List.from(widget.selectedCustomFields!);
@@ -185,10 +218,19 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
               };
             }).where((acc) => acc['isActive'] == true).toList();
 
-            // Auto-select first account if available
+            // Auto-select first account if available (only if not in edit mode)
             if (_accounts.isNotEmpty) {
-              _selectedAccountId = _accounts.first['id'];
-              _selectedMode = _accounts.first['mode'];
+              if (widget.collectionId == null || _selectedAccountId == null) {
+                _selectedAccountId = _accounts.first['id'];
+                _selectedMode = _accounts.first['mode'];
+              } else {
+                // In edit mode, find the matching account and set mode
+                final selectedAccount = _accounts.firstWhere(
+                  (acc) => acc['id']?.toString() == _selectedAccountId?.toString(),
+                  orElse: () => _accounts.first,
+                );
+                _selectedMode = selectedAccount['mode'];
+              }
             }
             _isLoadingAccounts = false;
           });
@@ -370,18 +412,30 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
         }
       }
 
-      final result = await CollectionService.createCollection(
-        customerName: _customerNameController.text.trim(),
-        amount: double.parse(_amountController.text),
-        mode: finalMode,
-        paymentModeId: _selectedAccountId,
-        assignedReceiver: widget.selectedUserId,
-        proofUrl: proofUrl,
-        notes: _receiptNoController.text.trim().isNotEmpty
-            ? 'Receipt No: ${_receiptNoController.text.trim()}'
-            : null,
-        customFields: customFieldsData.isNotEmpty ? customFieldsData : null,
-      );
+      final result = widget.collectionId != null
+          ? await CollectionService.editCollection(
+              widget.collectionId!,
+              customerName: _customerNameController.text.trim(),
+              amount: double.parse(_amountController.text),
+              mode: finalMode,
+              paymentModeId: _selectedAccountId,
+              proofUrl: proofUrl,
+              notes: _receiptNoController.text.trim().isNotEmpty
+                  ? 'Receipt No: ${_receiptNoController.text.trim()}'
+                  : null,
+            )
+          : await CollectionService.createCollection(
+              customerName: _customerNameController.text.trim(),
+              amount: double.parse(_amountController.text),
+              mode: finalMode,
+              paymentModeId: _selectedAccountId,
+              assignedReceiver: widget.selectedUserId,
+              proofUrl: proofUrl,
+              notes: _receiptNoController.text.trim().isNotEmpty
+                  ? 'Receipt No: ${_receiptNoController.text.trim()}'
+                  : null,
+              customFields: customFieldsData.isNotEmpty ? customFieldsData : null,
+            );
 
       if (mounted) {
         setState(() {
@@ -395,7 +449,7 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
             if (rootContext.mounted) {
               ScaffoldMessenger.of(rootContext).showSnackBar(
                 SnackBar(
-                  content: Text(result['message'] ?? 'Collection created successfully'),
+                  content: Text(result['message'] ?? (widget.collectionId != null ? 'Collection updated successfully' : 'Collection created successfully')),
                   backgroundColor: AppTheme.secondaryColor,
                 ),
               );
@@ -411,7 +465,7 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
           if (rootContext.mounted) {
             ScaffoldMessenger.of(rootContext).showSnackBar(
               SnackBar(
-                content: Text(result['message'] ?? 'Failed to create collection'),
+                content: Text(result['message'] ?? (widget.collectionId != null ? 'Failed to update collection' : 'Failed to create collection')),
                 backgroundColor: AppTheme.errorColor,
               ),
             );
@@ -495,7 +549,7 @@ class _AddCollectionDialogState extends State<AddCollectionDialog> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Add Collection',
+                                  widget.collectionId != null ? 'Edit Collection' : 'Add Collection',
                                   style: AppTheme.headingMedium.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,

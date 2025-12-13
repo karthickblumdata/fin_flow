@@ -12,12 +12,17 @@ class AddTransactionDialog extends StatefulWidget {
   final String? preSelectedReceiverId;
   final String? preSelectedReceiverName;
   final VoidCallback? onSuccess;
+  // Edit mode parameters
+  final String? transactionId;
+  final Map<String, dynamic>? existingData;
 
   const AddTransactionDialog({
     super.key,
     this.preSelectedReceiverId,
     this.preSelectedReceiverName,
     this.onSuccess,
+    this.transactionId,
+    this.existingData,
   });
 
   @override
@@ -48,6 +53,41 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
   @override
   void initState() {
     super.initState();
+    
+    // Load existing data if in edit mode
+    if (widget.transactionId != null && widget.existingData != null) {
+      final data = widget.existingData!;
+      final raw = data['raw'] is Map ? Map<String, dynamic>.from(data['raw'] as Map) : <String, dynamic>{};
+      
+      // Pre-fill controllers with existing data
+      _amountController.text = data['amountValue'] is num ? (data['amountValue'] as num).toString() : '';
+      _notesController.text = raw['purpose']?.toString() ?? data['purpose']?.toString() ?? '';
+      
+      // Set receiver if available
+      final receiverId = data['toId']?.toString();
+      final receiverName = data['to']?.toString();
+      if (receiverId != null && receiverName != null) {
+        _selectedReceiverId = receiverId;
+        _selectedReceiverName = receiverName;
+        _selectedReceiverDisplay = receiverName;
+        _searchController.text = receiverName;
+      }
+      
+      // Set payment mode ID if available
+      final paymentMode = raw['paymentModeId'] ?? raw['paymentMode'];
+      if (paymentMode is Map) {
+        _selectedPaymentModeId = (paymentMode['_id'] ?? paymentMode['id'])?.toString();
+      } else if (paymentMode is String) {
+        _selectedPaymentModeId = paymentMode;
+      }
+    } else if (widget.preSelectedReceiverId != null && widget.preSelectedReceiverName != null) {
+      // Pre-select receiver if provided
+      _selectedReceiverId = widget.preSelectedReceiverId;
+      _selectedReceiverName = widget.preSelectedReceiverName;
+      _selectedReceiverDisplay = widget.preSelectedReceiverName;
+      _searchController.text = widget.preSelectedReceiverName!;
+    }
+    
     _loadCurrentUserId();
     _loadUsers();
     _loadPaymentModes();
@@ -165,9 +205,22 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
               .where((pm) => pm['isActive'] == true)
               .map((pm) => Map<String, dynamic>.from(pm))
               .toList();
-          _isLoadingPaymentModes = false;
-          // Set default selected payment mode to first available
-          if (_paymentModes.isNotEmpty) {
+          
+          // In edit mode, preserve the selected payment mode if already set
+          if (widget.transactionId != null && _selectedPaymentModeId != null) {
+            // Find the matching payment mode and set the mode
+            final selectedPM = _paymentModes.firstWhere(
+              (pm) => (pm['_id']?.toString() ?? pm['id']?.toString()) == _selectedPaymentModeId,
+              orElse: () => {},
+            );
+            if (selectedPM.isNotEmpty) {
+              final description = selectedPM['description']?.toString() ?? '';
+              final parsed = PaymentModeService.parseDescription(description);
+              _selectedMode = parsed['mode']?.toString() ?? 'Cash';
+            }
+          } else {
+            // Set default selected payment mode to first available (only if not in edit mode)
+            if (_paymentModes.isNotEmpty) {
             final firstPM = _paymentModes.first;
             // Try multiple ways to get the ID
             final pmId = firstPM['_id']?.toString()?.trim() ?? 
@@ -188,6 +241,9 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
               print('   _id: ${firstPM['_id']}, id: ${firstPM['id']}');
             }
           }
+          }
+          
+          _isLoadingPaymentModes = false;
         });
       } else {
         if (mounted) {
@@ -334,14 +390,21 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
       print('   paymentModeId type: ${_selectedPaymentModeId.runtimeType}');
       print('   paymentModeId isEmpty: ${_selectedPaymentModeId?.isEmpty ?? true}');
       
-      final result = await TransactionService.createTransaction(
-        sender: _currentUserId!,
-        receiver: _selectedReceiverId!,
-        amount: amount,
-        mode: _selectedMode!,
-        purpose: purpose.isEmpty ? null : purpose,
-        paymentModeId: _selectedPaymentModeId,
-      );
+      final result = widget.transactionId != null
+          ? await TransactionService.editTransaction(
+              widget.transactionId!,
+              amount: amount,
+              mode: _selectedMode!,
+              purpose: purpose.isEmpty ? null : purpose,
+            )
+          : await TransactionService.createTransaction(
+              sender: _currentUserId!,
+              receiver: _selectedReceiverId!,
+              amount: amount,
+              mode: _selectedMode!,
+              purpose: purpose.isEmpty ? null : purpose,
+              paymentModeId: _selectedPaymentModeId,
+            );
 
       if (mounted) {
         setState(() {
@@ -353,7 +416,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result['message'] ?? '₹${_amountController.text} transferred to $_selectedReceiverName successfully'),
+              content: Text(result['message'] ?? (widget.transactionId != null ? 'Transaction updated successfully' : '₹${_amountController.text} transferred to $_selectedReceiverName successfully')),
               backgroundColor: AppTheme.secondaryColor,
               duration: const Duration(seconds: 3),
             ),
@@ -433,7 +496,7 @@ class _AddTransactionDialogState extends State<AddTransactionDialog> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Add Transaction',
+                        widget.transactionId != null ? 'Edit Transaction' : 'Add Transaction',
                         style: AppTheme.headingMedium.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,

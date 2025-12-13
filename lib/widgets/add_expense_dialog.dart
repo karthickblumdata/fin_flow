@@ -13,12 +13,17 @@ class AddExpenseDialog extends StatefulWidget {
   final String userId;
   final String userName;
   final VoidCallback? onSuccess;
+  // Edit mode parameters
+  final String? expenseId;
+  final Map<String, dynamic>? existingData;
 
   const AddExpenseDialog({
     super.key,
     required this.userId,
     required this.userName,
     this.onSuccess,
+    this.expenseId,
+    this.existingData,
   });
 
   @override
@@ -46,7 +51,49 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
   @override
   void initState() {
     super.initState();
+    
+    // Load existing data if in edit mode
+    if (widget.expenseId != null && widget.existingData != null) {
+      final data = widget.existingData!;
+      final raw = data['raw'] is Map ? Map<String, dynamic>.from(data['raw'] as Map) : <String, dynamic>{};
+      
+      // Pre-fill controllers with existing data
+      _amountController.text = data['amountValue'] is num ? (data['amountValue'] as num).toString() : '';
+      _descriptionController.text = raw['description']?.toString() ?? '';
+      _remarkController.text = raw['remarks']?.toString() ?? raw['remark']?.toString() ?? '';
+      
+      // Set expense type/category
+      final category = raw['category']?.toString() ?? data['purpose']?.toString() ?? '';
+      if (category.isNotEmpty) {
+        // Will be set after expense types are loaded
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _selectExpenseTypeByName(category);
+          }
+        });
+      }
+      
+      // Set payment mode
+      final mode = raw['mode']?.toString() ?? data['mode']?.toString() ?? 'Cash';
+      _selectedMode = mode;
+      
+      // Set current step to 2 (details step) since we already have the category
+      _currentStep = 2;
+    }
+    
     _loadExpenseTypes();
+  }
+  
+  void _selectExpenseTypeByName(String categoryName) {
+    final index = _expenseTypes.indexWhere((et) => 
+      (et['name'] as String).toLowerCase() == categoryName.toLowerCase()
+    );
+    if (index >= 0) {
+      setState(() {
+        _selectedExpenseType = _expenseTypes[index];
+        _selectedExpenseTypeIndex = index;
+      });
+    }
   }
 
   @override
@@ -198,16 +245,26 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
         }
       }
       
-      // Create expense (mode defaults to Cash, will be deducted from Payment Mode index 0 on approval)
-      final result = await ExpenseService.createExpense(
-        userId: widget.userId,
-        category: category,
-        amount: amount,
-        mode: 'Cash', // Default to Cash, actual deduction happens from Payment Mode index 0 on approval
-        description: description.isNotEmpty ? description : null,
-        remarks: remark.isNotEmpty ? remark : null,
-        proofUrl: proofUrl,
-      );
+      // Create or update expense
+      final result = widget.expenseId != null
+          ? await ExpenseService.updateExpense(
+              widget.expenseId!,
+              category: category,
+              amount: amount,
+              mode: _selectedMode ?? 'Cash',
+              description: description.isNotEmpty ? description : null,
+              remarks: remark.isNotEmpty ? remark : null,
+              proofUrl: proofUrl,
+            )
+          : await ExpenseService.createExpense(
+              userId: widget.userId,
+              category: category,
+              amount: amount,
+              mode: 'Cash', // Default to Cash, actual deduction happens from Payment Mode index 0 on approval
+              description: description.isNotEmpty ? description : null,
+              remarks: remark.isNotEmpty ? remark : null,
+              proofUrl: proofUrl,
+            );
 
       if (mounted) {
         setState(() {
@@ -219,7 +276,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result['message'] ?? 'Expense added successfully'),
+              content: Text(result['message'] ?? (widget.expenseId != null ? 'Expense updated successfully' : 'Expense added successfully')),
               backgroundColor: AppTheme.secondaryColor,
               duration: const Duration(seconds: 3),
             ),
@@ -229,7 +286,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result['message'] ?? 'Failed to add expense'),
+                content: Text(result['message'] ?? (widget.expenseId != null ? 'Failed to update expense' : 'Failed to add expense')),
               backgroundColor: AppTheme.errorColor,
               duration: const Duration(seconds: 3),
             ),
@@ -701,7 +758,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Add Expense',
+                      widget.expenseId != null ? 'Edit Expense' : 'Add Expense',
                       style: AppTheme.headingMedium.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
