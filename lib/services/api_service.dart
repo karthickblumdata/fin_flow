@@ -136,15 +136,31 @@ class ApiService {
       final uri = Uri.parse(fullUrl);
       final headers = await _getHeaders();
       
+      // Log the PUT request details
+      print('🌐 [HTTP PUT] Sending request:');
+      print('   URL: $fullUrl');
+      print('   Endpoint: $endpoint');
+      print('   Body: ${jsonEncode(body)}');
+      print('   Headers: ${headers.keys.join(", ")}');
+      
+      final encodedBody = jsonEncode(body);
+      print('   Encoded Body: $encodedBody');
+      print('   Body Length: ${encodedBody.length} bytes');
+      
       final response = await http.put(
         uri,
         headers: headers,
-        body: jsonEncode(body),
+        body: encodedBody,
       );
+      
+      print('📥 [HTTP PUT] Response received:');
+      print('   Status Code: ${response.statusCode}');
+      print('   Response Body: ${response.body}');
       
       return _handleResponse(response);
     } catch (e) {
       final fullUrl = '${ApiConstants.baseUrl}$endpoint';
+      print('❌ [HTTP PUT] Error: $e');
       throw Exception('Failed to connect to $fullUrl. Error: $e');
     }
   }

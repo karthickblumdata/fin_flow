@@ -12,6 +12,10 @@ import '../services/pincode_service.dart';
 import '../utils/api_constants.dart';
 import '../theme/app_theme.dart';
 import '../utils/profile_image_helper.dart';
+import '../utils/permission_tree_builder.dart';
+import '../models/permission_node.dart';
+import '../widgets/hierarchical_checkbox.dart';
+import '../widgets/permission_preview_widget.dart';
 import 'role_selector_field.dart';
 import 'dart:async';
 
@@ -55,6 +59,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
   bool _isLoadingRoles = false;
   late bool _isActive;
   bool _isNonWalletUser = false;
+  List<String> _selectedPermissions = [];
   bool _emailHasInput = false;
   bool _emailIsValid = false;
   DateTime? _selectedDateOfBirth;
@@ -421,17 +426,42 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                           },
                                         );
 
-                                        final Widget roleField = RoleSelectorField(
-                                          isLoading: _isLoadingRoles,
-                                          roles: _availableRoles,
-                                          selectedRole: _selectedRole,
-                                          enabled: !_isSubmitting,
-                                          onRoleChanged: (value) {
-                                            setState(() {
-                                              _selectedRole = value;
-                                              _roleController.text = value ?? '';
-                                            });
-                                          },
+                                        final Widget roleField = Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            RoleSelectorField(
+                                              isLoading: _isLoadingRoles,
+                                              roles: _availableRoles,
+                                              selectedRole: _selectedRole,
+                                              enabled: !_isSubmitting,
+                                              onRoleChanged: (value) {
+                                                setState(() {
+                                                  _selectedRole = value;
+                                                  _roleController.text = value ?? '';
+                                                  // Clear permissions when role changes
+                                                  _selectedPermissions = [];
+                                                });
+                                              },
+                                            ),
+                                            if (_selectedRole != null && _selectedRole!.isNotEmpty) ...[
+                                              const SizedBox(height: 12),
+                                              ElevatedButton.icon(
+                                                onPressed: _isSubmitting ? null : () async {
+                                                  await _showRolePermissionDialog(_selectedRole!);
+                                                },
+                                                icon: const Icon(Icons.edit_outlined, size: 18),
+                                                label: const Text('Edit Permission'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: AppTheme.primaryColor,
+                                                  foregroundColor: Colors.white,
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         );
 
                                         final Widget contactInputs = isWide
@@ -1140,6 +1170,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
         address: _addressController.text.trim(),
         state: _stateController.text.trim(),
         pinCode: _pinCodeController.text.trim(),
+        userSpecificPermissions: _selectedPermissions,
       );
 
       if (!mounted) {
@@ -1347,6 +1378,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
         address: _addressController.text.trim(),
         state: _stateController.text.trim(),
         pinCode: _pinCodeController.text.trim(),
+        userSpecificPermissions: _selectedPermissions,
       );
 
       if (!mounted) {
@@ -1566,6 +1598,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
         state: _stateController.text.trim(),
         pinCode: _pinCodeController.text.trim(),
         skipWallet: true, // Skip wallet creation
+        userSpecificPermissions: _selectedPermissions,
       );
 
       if (!mounted) {
@@ -1989,6 +2022,1007 @@ class _AddUserDialogState extends State<AddUserDialog> {
         .map((part) => part.substring(0, 1).toUpperCase())
         .join();
     return parts.isEmpty ? '?' : parts;
+  }
+
+  /// Filter permission tree to only show permissions that the role has
+  PermissionNode _filterPermissionTreeByRole(
+    PermissionNode tree,
+    List<String> rolePermissions,
+  ) {
+    return _filterNodeRecursive(tree, rolePermissions);
+  }
+
+  PermissionNode _filterNodeRecursive(
+    PermissionNode node,
+    List<String> rolePermissions,
+  ) {
+    // Skip root node
+    if (node.id == 'root') {
+      final filteredChildren = node.children
+          .map((child) => _filterNodeRecursive(child, rolePermissions))
+          .where((child) {
+            // Keep child if it or any of its descendants are in role permissions
+            final childAllIds = child.getAllPermissionIds();
+            return childAllIds.any((id) => rolePermissions.contains(id) && id != 'root');
+          })
+          .toList();
+      return node.copyWith(children: filteredChildren);
+    }
+
+    // Check if this node is in role permissions
+    final nodeInRole = rolePermissions.contains(node.id);
+    
+    // If this node is in role permissions, keep all its children (they're implicitly included)
+    if (nodeInRole) {
+      // Keep all children as-is since parent is in role
+      return node;
+    }
+    
+    // Otherwise, filter children recursively
+    final filteredChildren = node.children
+        .map((child) => _filterNodeRecursive(child, rolePermissions))
+        .where((child) {
+          // Keep child if it or any of its descendants are in role permissions
+          final childAllIds = child.getAllPermissionIds();
+          return childAllIds.any((id) => rolePermissions.contains(id) && id != 'root');
+        })
+        .toList();
+
+    // If has filtered children, keep this node with filtered children
+    if (filteredChildren.isNotEmpty) {
+      return node.copyWith(children: filteredChildren);
+    }
+
+    // Return empty node if not in role permissions and has no matching children
+    return node.copyWith(children: []);
+  }
+
+  /// Show role permission dialog with defaults (read-only) and user-specific permissions (editable)
+  Future<void> _showRolePermissionDialog(String roleName) async {
+    if (!mounted) return;
+    
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
+    // Load role default permissions
+    try {
+      final rolePermissionsResult = await RoleService.getRolePermissions(roleName);
+      if (!mounted) return;
+      
+      if (rolePermissionsResult['success'] != true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load role permissions: ${rolePermissionsResult['message'] ?? 'Unknown error'}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+        return;
+      }
+      
+      final roleDefaultPermissions = List<String>.from(rolePermissionsResult['permissions'] ?? []);
+      print('✅ Loaded ${roleDefaultPermissions.length} default permissions for role: $roleName');
+      
+      // Get existing user permissions if editing
+      List<String> existingUserPermissions = [];
+      final userId = _initialValues['_id']?.toString() ?? _initialValues['id']?.toString();
+      if (userId != null && userId.isNotEmpty) {
+        // Load existing user permissions
+        try {
+          final userResult = await ApiService.get('/api/users/$userId');
+          if (userResult['success'] == true) {
+            final user = userResult['user'] as Map<String, dynamic>?;
+            existingUserPermissions = List<String>.from(user?['userSpecificPermissions'] ?? []);
+            print('✅ Loaded ${existingUserPermissions.length} existing user-specific permissions');
+          }
+        } catch (e) {
+          print('⚠️ Could not load existing user permissions: $e');
+        }
+      }
+      
+      // Get current user's permissions to filter what can be assigned
+      final currentUserPermissionsResult = await AuthService.refreshPermissions();
+      if (!mounted) return;
+      
+      if (currentUserPermissionsResult['success'] != true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load your permissions: ${currentUserPermissionsResult['message'] ?? 'Unknown error'}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+        return;
+      }
+      
+      final currentUserPermissions = List<String>.from(currentUserPermissionsResult['permissions'] ?? []);
+      final defaultTree = PermissionTreeBuilder.buildDefaultPermissionTree();
+      
+      // Handle SuperAdmin case
+      List<String> permissionsToShow = currentUserPermissions;
+      if (currentUserPermissions.contains('*')) {
+        permissionsToShow = defaultTree.getAllPermissionIds().where((id) => id != 'root').toList();
+      }
+      
+      if (permissionsToShow.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('You have no permissions assigned. Cannot assign permissions to user.'),
+            backgroundColor: AppTheme.warningColor,
+          ),
+        );
+        return;
+      }
+      
+      // Filter tree to only show permissions that the logged-in user has
+      final filteredTree = _filterPermissionTreeByRole(defaultTree, permissionsToShow);
+      
+      if (filteredTree.children.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No matching permissions found based on your access.'),
+            backgroundColor: AppTheme.warningColor,
+          ),
+        );
+        return;
+      }
+      
+      // Build role default permissions tree (read-only)
+      final roleDefaultTree = PermissionTreeBuilder.applyPermissions(
+        filteredTree,
+        roleDefaultPermissions,
+      );
+      
+      // For new users: Start with empty permissions (user selects all)
+      // For existing users: Use their current user-specific permissions
+      final initialUserPermissions = <String>[
+        ...(_selectedPermissions.isNotEmpty 
+            ? _selectedPermissions 
+            : (existingUserPermissions.isNotEmpty 
+                ? existingUserPermissions.map((p) => p.toString()).toList() 
+                : []))
+      ];
+      
+      // Combine role defaults with user-specific permissions
+      // Role defaults will be locked (non-editable)
+      final allPermissions = <String>[
+        ...roleDefaultPermissions,
+        ...initialUserPermissions.where((p) => !roleDefaultPermissions.contains(p)),
+      ].toSet().toList();
+      
+      // Apply permissions to tree, marking role defaults as locked
+      final userPermissionsTree = PermissionTreeBuilder.applyPermissions(
+        filteredTree,
+        allPermissions,
+        lockedPermissionIds: roleDefaultPermissions,
+      );
+      
+      if (!mounted) return;
+      
+      // Track selected permissions for the dialog - only user-specific (not role defaults)
+      List<String> dialogSelectedPermissions = List.from(
+        initialUserPermissions.where((p) => p != 'root' && !roleDefaultPermissions.contains(p))
+      );
+      
+      // Show dialog
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierColor: Colors.black.withOpacity(0.5),
+        useRootNavigator: true,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              // Store reference to filteredTree and roleDefaultPermissions for use in onChanged
+              final filteredTreeRef = filteredTree;
+              final roleDefaultsRef = roleDefaultPermissions;
+              
+              // Combine role defaults (locked) with user-specific permissions (editable)
+              final allSelectedPermissions = <String>[
+                ...roleDefaultsRef, // Role defaults (will be locked)
+                ...dialogSelectedPermissions, // User-specific permissions
+              ].toSet().toList();
+              
+              // Rebuild user permissions tree with role defaults locked
+              PermissionNode currentUserPermissionsTree = PermissionTreeBuilder.applyPermissions(
+                filteredTreeRef,
+                allSelectedPermissions,
+                lockedPermissionIds: roleDefaultsRef,
+              );
+              
+              return Dialog(
+                backgroundColor: Colors.transparent,
+                insetPadding: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 16 : 32,
+                  vertical: 24,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Container(
+                  width: isMobile ? double.infinity : 800,
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppTheme.primaryColor,
+                              AppTheme.primaryColor.withOpacity(0.8),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(20),
+                            topRight: Radius.circular(20),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.security_outlined,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Edit Permissions - $roleName',
+                                    style: AppTheme.headingMedium.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 22,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'User-specific permissions',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      // Content
+                      Flexible(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // User-Specific Permissions Section (Editable)
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.secondaryColor.withOpacity(0.05),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: AppTheme.secondaryColor.withOpacity(0.2),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.edit_outlined,
+                                          color: AppTheme.secondaryColor,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'User-Specific Permissions',
+                                          style: AppTheme.headingSmall.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Select permissions for this user',
+                                      style: AppTheme.bodySmall.copyWith(
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    _buildEditablePermissionTree(
+                                      tree: currentUserPermissionsTree,
+                                      roleDefaultPermissions: roleDefaultsRef,
+                                      filteredTree: filteredTreeRef,
+                                      dialogSelectedPermissions: dialogSelectedPermissions,
+                                      onPermissionsChanged: (newPermissions) {
+                                        setDialogState(() {
+                                          // Filter out role defaults from new permissions (they should stay locked)
+                                          dialogSelectedPermissions = newPermissions
+                                              .where((p) => !roleDefaultsRef.contains(p) && p != 'root')
+                                              .toList();
+                                          
+                                          // Combine role defaults (locked) with user-specific permissions
+                                          final allSelectedPermissions = <String>[
+                                            ...roleDefaultsRef, // Role defaults (locked)
+                                            ...dialogSelectedPermissions, // User-specific permissions
+                                          ].toSet().toList();
+                                          
+                                          // Rebuild tree with role defaults locked
+                                          currentUserPermissionsTree = PermissionTreeBuilder.applyPermissions(
+                                            filteredTreeRef,
+                                            allSelectedPermissions,
+                                            lockedPermissionIds: roleDefaultsRef,
+                                          );
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      
+                      // Footer with buttons
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            top: BorderSide(
+                              color: AppTheme.borderColor.withOpacity(0.3),
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(color: AppTheme.textSecondary),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedPermissions = List.from(dialogSelectedPermissions);
+                                });
+                                Navigator.of(dialogContext).pop();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.primaryColor,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 12,
+                                ),
+                              ),
+                              child: const Text('Save'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading permissions: $e'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+  
+  /// Build editable permission tree with role defaults locked
+  Widget _buildEditablePermissionTree({
+    required PermissionNode tree,
+    required List<String> roleDefaultPermissions,
+    required PermissionNode filteredTree,
+    required List<String> dialogSelectedPermissions,
+    required Function(List<String>) onPermissionsChanged,
+  }) {
+    return HierarchicalCheckbox(
+      key: ValueKey('user_perms_${dialogSelectedPermissions.join(",")}_${tree.getSelectedPermissionIds().length}'),
+      node: tree,
+      onChanged: (node) {
+        // Get all selected permissions from the updated tree
+        final allSelected = node.getSelectedPermissionIds();
+        
+        // Filter out role defaults (locked permissions) - only return user-specific permissions
+        final userSpecific = allSelected
+            .where((p) => !roleDefaultPermissions.contains(p) && p != 'root')
+            .toList();
+        
+        // Update permissions list (this will trigger tree rebuild in parent)
+        onPermissionsChanged(userSpecific);
+      },
+    );
+  }
+
+  /// Build compact permission view showing "+3 more" style
+  Widget _buildCompactPermissionView(List<String> userPermissions, List<String> roleDefaults) {
+    // Show all user permissions (role defaults + additional)
+    final allUserPermissions = userPermissions
+        .where((p) => p.isNotEmpty && p != 'root')
+        .toList();
+    
+    if (allUserPermissions.isEmpty) {
+      return Text(
+        'No permissions assigned.',
+        style: AppTheme.bodyMedium.copyWith(
+          color: AppTheme.textSecondary,
+        ),
+      );
+    }
+    
+    const int maxVisible = 3;
+    final visiblePermissions = allUserPermissions.take(maxVisible).toList();
+    final remainingCount = allUserPermissions.length - maxVisible;
+    
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ...visiblePermissions.map((permission) => Chip(
+          label: Text(
+            permission,
+            style: const TextStyle(fontSize: 12),
+          ),
+          backgroundColor: AppTheme.secondaryColor.withOpacity(0.1),
+          labelStyle: TextStyle(color: AppTheme.secondaryColor),
+        )),
+        if (remainingCount > 0)
+          Chip(
+            label: Text('+$remainingCount more'),
+            backgroundColor: AppTheme.warningColor.withOpacity(0.1),
+            labelStyle: TextStyle(color: AppTheme.warningColor),
+            onDeleted: () {
+              // Show full list dialog
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('All User Screen Permissions'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: allUserPermissions.map((p) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            if (roleDefaults.contains(p))
+                              Icon(Icons.lock_outline, size: 16, color: AppTheme.primaryColor),
+                            if (!roleDefaults.contains(p))
+                              Icon(Icons.edit_outlined, size: 16, color: AppTheme.secondaryColor),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(p)),
+                          ],
+                        ),
+                      )).toList(),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  /// Show permission selection dialog for the selected role
+  Future<void> _showPermissionSelectionDialog(String roleName) async {
+    print('🔐 _showPermissionSelectionDialog called for role: $roleName');
+    if (!mounted) {
+      print('❌ Widget not mounted, returning');
+      return;
+    }
+    
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    print('📱 Is mobile: $isMobile');
+
+    // Show loading indicator
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+              SizedBox(width: 12),
+              Text('Loading your permissions...'),
+            ],
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
+    // Fetch logged-in user's permissions (role + user-specific combined)
+    try {
+      final currentUserPermissionsResult = await AuthService.refreshPermissions();
+      
+      if (!mounted) return;
+      
+      if (currentUserPermissionsResult['success'] != true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load your permissions: ${currentUserPermissionsResult['message'] ?? 'Unknown error'}'),
+            backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
+      final currentUserPermissions = List<String>.from(currentUserPermissionsResult['permissions'] ?? []);
+      print('✅ Loaded ${currentUserPermissions.length} permissions for logged-in user');
+      
+      // Build default permission tree (needed for both SuperAdmin check and filtering)
+      final defaultTree = PermissionTreeBuilder.buildDefaultPermissionTree();
+      
+      // Handle SuperAdmin case - if user has '*' permission, they have all permissions
+      // For SuperAdmin, we should show all available permissions from the tree
+      List<String> permissionsToShow = currentUserPermissions;
+      if (currentUserPermissions.contains('*')) {
+        print('🔑 Logged-in user is SuperAdmin - will show all available permissions');
+        // For SuperAdmin, get all permissions from the default tree
+        permissionsToShow = defaultTree.getAllPermissionIds().where((id) => id != 'root').toList();
+        print('📋 SuperAdmin can assign ${permissionsToShow.length} total permissions');
+      }
+      
+      if (permissionsToShow.isEmpty) {
+        print('⚠️ Logged-in user has no permissions');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('You have no permissions assigned. Cannot assign permissions to new user.'),
+              backgroundColor: AppTheme.warningColor,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Filter tree to only show permissions that the logged-in user has
+      final filteredTree = _filterPermissionTreeByRole(defaultTree, permissionsToShow);
+      
+      // Check if filtered tree has any children (permissions)
+      print('🌳 Filtered tree has ${filteredTree.children.length} top-level children');
+      if (filteredTree.children.isEmpty) {
+        print('⚠️ No matching permissions found after filtering');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('No matching permissions found based on your access.'),
+              backgroundColor: AppTheme.warningColor,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Apply previously selected permissions if any
+      PermissionNode currentTree = filteredTree;
+      if (_selectedPermissions.isNotEmpty) {
+        print('📝 Applying ${_selectedPermissions.length} previously selected permissions');
+        currentTree = PermissionTreeBuilder.applyPermissions(filteredTree, _selectedPermissions);
+      }
+
+      if (!mounted) {
+        print('❌ Widget not mounted before showing dialog');
+        return;
+      }
+
+      print('🎯 Showing permission selection dialog');
+      // Use Navigator to show dialog with proper context
+      // Use rootNavigator: true to show dialog above the add user dialog
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierColor: Colors.black.withOpacity(0.5),
+        useRootNavigator: true, // Use root navigator to show above existing dialog
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 16 : 32,
+                vertical: 24,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                width: isMobile ? double.infinity : 650,
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.9,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Header with gradient
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppTheme.primaryColor,
+                            AppTheme.primaryColor.withOpacity(0.8),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.security_outlined,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Select Permissions',
+                                  style: AppTheme.headingMedium.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 22,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Select permissions from your available access',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Form Content
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Info message
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryColor.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppTheme.primaryColor.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.info_outline,
+                                    color: AppTheme.primaryColor,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Only permissions that you have access to are shown below. The selected permissions will be assigned to the new user.',
+                                      style: AppTheme.bodyMedium.copyWith(
+                                        color: AppTheme.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+
+                            // Configure User Role Section
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.secondaryColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.settings_outlined,
+                                    color: AppTheme.secondaryColor,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Configure User Permissions',
+                                  style: AppTheme.headingSmall.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Permission Tree
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceColor,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: AppTheme.borderColor.withOpacity(0.5),
+                                  width: 1.5,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.03),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              constraints: const BoxConstraints(
+                                maxHeight: 450,
+                              ),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: currentTree.children.map((node) {
+                                    final nodeIndex = currentTree.children.indexOf(node);
+                                    return HierarchicalCheckbox(
+                                      key: ValueKey('${node.id}_$nodeIndex'),
+                                      node: node,
+                                      onChanged: (updatedNode) {
+                                        setDialogState(() {
+                                          final updatedChildren =
+                                              List<PermissionNode>.from(
+                                                  currentTree.children);
+                                          updatedChildren[nodeIndex] = updatedNode;
+                                          currentTree = currentTree.copyWith(
+                                            children: updatedChildren,
+                                          );
+                                          currentTree.updateSelectionState();
+                                        });
+                                      },
+                                      isMobile: isMobile,
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+
+                            // Permission Preview
+                            PermissionPreviewWidget(
+                              selectedPermissions: currentTree.getSelectedPermissionIds(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Action Buttons
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceColor.withOpacity(0.5),
+                        border: Border(
+                          top: BorderSide(
+                            color: AppTheme.borderColor.withOpacity(0.5),
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+                            },
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                            ),
+                            child: Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton(
+                            onPressed: () {
+                              final allSelectedPermissions =
+                                  currentTree.getSelectedPermissionIds();
+                              
+                              // Filter out root node ID and empty strings
+                              final selectedPermissions = allSelectedPermissions
+                                  .where((id) => id.isNotEmpty && id != 'root')
+                                  .toList();
+
+                              setState(() {
+                                _selectedPermissions = selectedPermissions;
+                              });
+
+                              Navigator.of(dialogContext).pop();
+                              
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Selected ${selectedPermissions.length} permission(s)',
+                                  ),
+                                  backgroundColor: AppTheme.secondaryColor,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.secondaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check, size: 18),
+                                SizedBox(width: 8),
+                                Text('Save Permissions'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    } catch (e) {
+      print('❌ Error in permission selection dialog: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error showing permission dialog: $e'),
+            backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 }
 

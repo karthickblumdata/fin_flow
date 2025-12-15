@@ -45,6 +45,7 @@ class ApiConstants {
   // User permission endpoints
   static String getUserPermissions(String userId) => '/users/$userId/permissions';
   static String updateUserPermissions(String userId) => '/users/$userId/permissions';
+  static String updateUserAssignments(String userId) => '/users/$userId/assignments';
   static const String refreshCurrentUserPermissions = '/auth/me/permissions';
   
   // Wallet endpoints
@@ -64,6 +65,8 @@ class ApiConstants {
   static const String updateWalletSettings = '/wallet/settings';
   static const String exportWalletReport = '/wallet/report/export';
   static const String getWalletAnalytics = '/wallet/analytics';
+  static const String assignWallet = '/wallet/assign';
+  static String getWalletAssignments(String walletId) => '/wallet/$walletId/assignments';
   
   // Account endpoints
   static const String addAmountToAccount = '/accounts/add-amount';

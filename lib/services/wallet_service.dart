@@ -518,8 +518,13 @@ class WalletService {
       if (type != null && type.isNotEmpty) {
         queryParams['type'] = type;
       }
+      // Always include accountId in query params (even if null) to help backend detect Account Reports context
+      // This allows backend to distinguish between Account Reports "All Accounts" and All Wallet Report
       if (accountId != null && accountId.isNotEmpty) {
         queryParams['accountId'] = accountId;
+      } else {
+        // Explicitly pass 'null' as string to indicate Account Reports "All Accounts" context
+        queryParams['accountId'] = 'null';
       }
       if (userRole != null && userRole.isNotEmpty) {
         queryParams['userRole'] = userRole;
@@ -986,6 +991,65 @@ class WalletService {
         'message': e.toString().replaceFirst('Exception: ', ''),
         'analytics': null,
         'summary': <String, dynamic>{},
+      };
+    }
+  }
+
+  /// Assign wallet to user (SuperAdmin only)
+  static Future<Map<String, dynamic>> assignWallet({
+    required String userId,
+  }) async {
+    try {
+      if (userId.isEmpty) {
+        return {
+          'success': false,
+          'message': 'User ID is required',
+        };
+      }
+
+      final response = await ApiService.post(ApiConstants.assignWallet, {
+        'userId': userId,
+      });
+
+      return {
+        'success': response['success'] == true,
+        'message': response['message'] ?? 'Wallet assigned successfully',
+        'wallet': response['wallet'],
+      };
+    } catch (e) {
+      final errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return {
+        'success': false,
+        'message': errorMessage.isNotEmpty ? errorMessage : 'Failed to assign wallet',
+      };
+    }
+  }
+
+  /// Get wallet assignment information
+  static Future<Map<String, dynamic>> getWalletAssignments(String walletId) async {
+    try {
+      if (walletId.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Wallet ID is required',
+        };
+      }
+
+      final response = await ApiService.get(ApiConstants.getWalletAssignments(walletId));
+
+      return {
+        'success': response['success'] == true,
+        'wallet': response['wallet'],
+        'remainingUsers': response['remainingUsers'] ?? [],
+        'message': response['message'],
+      };
+    } catch (e) {
+      final errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return {
+        'success': false,
+        'message': errorMessage.isNotEmpty ? errorMessage : 'Failed to get wallet assignments',
+        'wallet': null,
+        'remainingUsers': [],
       };
     }
   }

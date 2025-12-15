@@ -798,23 +798,27 @@ class PermissionTreeBuilder {
   // Apply selected permissions to the tree
   static PermissionNode applyPermissions(
     PermissionNode tree,
-    List<String> selectedPermissionIds,
-  ) {
-    return _applyPermissionsRecursive(tree, selectedPermissionIds);
+    List<String> selectedPermissionIds, {
+    List<String>? lockedPermissionIds,
+  }) {
+    return _applyPermissionsRecursive(tree, selectedPermissionIds, lockedPermissionIds ?? []);
   }
 
   static PermissionNode _applyPermissionsRecursive(
     PermissionNode node,
     List<String> selectedPermissionIds,
+    List<String> lockedPermissionIds,
   ) {
     final isSelected = selectedPermissionIds.contains(node.id);
+    final isLocked = lockedPermissionIds.contains(node.id);
     
     final updatedChildren = node.children.map((child) {
-      return _applyPermissionsRecursive(child, selectedPermissionIds);
+      return _applyPermissionsRecursive(child, selectedPermissionIds, lockedPermissionIds);
     }).toList();
 
     final updatedNode = node.copyWith(
       isSelected: isSelected,
+      isLocked: isLocked,
       children: updatedChildren,
     );
 
@@ -846,6 +850,67 @@ class PermissionTreeBuilder {
     }).toList();
 
     return tree.copyWith(children: filteredChildren);
+  }
+
+  /// Filter permission tree to show only permissions that are in allowedPermissions
+  /// This is used for hierarchical permission assignment where users can only grant
+  /// permissions they possess
+  static PermissionNode filterPermissionTree(
+    PermissionNode tree,
+    List<String> allowedPermissions,
+  ) {
+    // Convert to Set for faster lookup
+    final allowedSet = allowedPermissions.toSet();
+    
+    // Special case: if root node, keep it but filter children
+    if (tree.id == 'root') {
+      final filteredChildren = tree.children
+          .map((child) => _filterPermissionNodeRecursive(child, allowedSet))
+          .where((child) => child != null)
+          .cast<PermissionNode>()
+          .toList();
+      
+      return tree.copyWith(children: filteredChildren);
+    }
+    
+    return _filterPermissionNodeRecursive(tree, allowedSet) ?? tree;
+  }
+
+  /// Recursively filter a permission node and its children
+  /// Returns null if the node should be removed
+  static PermissionNode? _filterPermissionNodeRecursive(
+    PermissionNode node,
+    Set<String> allowedPermissions,
+  ) {
+    // Check if this node's permission is allowed
+    final isAllowed = allowedPermissions.contains(node.id);
+    
+    // Filter children first
+    final filteredChildren = node.children
+        .map((child) => _filterPermissionNodeRecursive(child, allowedPermissions))
+        .where((child) => child != null)
+        .cast<PermissionNode>()
+        .toList();
+    
+    // If this is a leaf node (no children) and it's not allowed, remove it
+    if (node.children.isEmpty && !isAllowed) {
+      return null;
+    }
+    
+    // If this node has children, keep it if:
+    // 1. The node itself is allowed, OR
+    // 2. It has at least one allowed child
+    if (node.children.isNotEmpty) {
+      if (!isAllowed && filteredChildren.isEmpty) {
+        // Node not allowed and no allowed children - remove it
+        return null;
+      }
+      // Keep the node with filtered children
+      return node.copyWith(children: filteredChildren);
+    }
+    
+    // Leaf node that is allowed - keep it
+    return node.copyWith(children: filteredChildren);
   }
 }
 

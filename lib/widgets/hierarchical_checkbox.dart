@@ -183,7 +183,7 @@ class _HierarchicalCheckboxState extends State<HierarchicalCheckbox> {
                 // Flutter's Checkbox onChanged naturally prevents parent InkWell from firing
                 Checkbox(
                   value: _getCheckboxValue(),
-                  onChanged: (value) {
+                  onChanged: _currentNode.isLocked ? null : (value) {
                     // Ensure state is updated properly
                     _handleCheckboxChanged(value);
                   },
@@ -194,6 +194,15 @@ class _HierarchicalCheckboxState extends State<HierarchicalCheckbox> {
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 const SizedBox(width: 8),
+                // Lock icon for locked permissions
+                if (_currentNode.isLocked)
+                  Icon(
+                    Icons.lock_outline,
+                    size: 16,
+                    color: AppTheme.textSecondary,
+                  ),
+                if (_currentNode.isLocked)
+                  const SizedBox(width: 4),
                 // Label or Icon
                 Expanded(
                   child: _isActionPermission()
@@ -202,7 +211,9 @@ class _HierarchicalCheckboxState extends State<HierarchicalCheckbox> {
                             Icon(
                               _getActionIcon(_currentNode.label)!,
                               size: fontSize + 2,
-                              color: AppTheme.textPrimary,
+                              color: _currentNode.isLocked 
+                                  ? AppTheme.textSecondary 
+                                  : AppTheme.textPrimary,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -215,7 +226,9 @@ class _HierarchicalCheckboxState extends State<HierarchicalCheckbox> {
                                     style: TextStyle(
                                       fontSize: fontSize,
                                       fontWeight: FontWeight.normal,
-                                      color: AppTheme.textPrimary,
+                                      color: _currentNode.isLocked 
+                                          ? AppTheme.textSecondary 
+                                          : AppTheme.textPrimary,
                                     ),
                                   ),
                                   if (_currentNode.description != null) ...[
@@ -244,7 +257,9 @@ class _HierarchicalCheckboxState extends State<HierarchicalCheckbox> {
                                 fontWeight: hasChildren
                                     ? FontWeight.w600
                                     : FontWeight.normal,
-                                color: AppTheme.textPrimary,
+                                color: _currentNode.isLocked 
+                                    ? AppTheme.textSecondary 
+                                    : AppTheme.textPrimary,
                               ),
                             ),
                             if (_currentNode.description != null) ...[

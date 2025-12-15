@@ -129,4 +129,93 @@ class UserService {
       };
     }
   }
+
+  /// Update user permissions (SuperAdmin or user with assign permission)
+  /// [permissions] - List of permission IDs to assign to the user
+  static Future<Map<String, dynamic>> updateUserPermissions({
+    required String userId,
+    required List<String> permissions,
+  }) async {
+    try {
+      final response = await ApiService.put(
+        ApiConstants.updateUserPermissions(userId),
+        {
+          'userSpecificPermissions': permissions,
+        },
+      );
+
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'message': response['message'] ?? 'User permissions updated successfully',
+          'user': response['user'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? 'Failed to update user permissions',
+          'missingPermissions': response['missingPermissions'] ?? [],
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString().replaceFirst('Exception: ', ''),
+      };
+    }
+  }
+
+  /// Update user assignments (assigned users)
+  static Future<Map<String, dynamic>> updateUserAssignments({
+    required String userId,
+    required List<String> assignedUserIds,
+  }) async {
+    try {
+      // Log what we're sending
+      print('\n📤 [API REQUEST] Sending User Assignments Update:');
+      print('   Endpoint: ${ApiConstants.updateUserAssignments(userId)}');
+      print('   Target User ID: $userId');
+      print('   Assigned User IDs Count: ${assignedUserIds.length}');
+      print('   Assigned User IDs: $assignedUserIds');
+      print('   Request Body: { "assignedUserIds": $assignedUserIds }');
+      
+      final requestBody = {
+        'assignedUserIds': assignedUserIds,
+      };
+      
+      print('   ✅ Request prepared, sending to backend...');
+      
+      final response = await ApiService.put(
+        ApiConstants.updateUserAssignments(userId),
+        requestBody,
+      );
+      
+      print('   📥 [API RESPONSE] Received response:');
+      print('   Success: ${response['success']}');
+      print('   Message: ${response['message']}');
+      
+      if (response['user'] != null) {
+        final user = response['user'] as Map<String, dynamic>?;
+        print('   User assignedUsers count: ${(user?['assignedUsers'] as List?)?.length ?? 0}');
+      }
+
+      if (response['success'] == true) {
+        return {
+          'success': true,
+          'message': response['message'] ?? 'User assignments updated successfully',
+          'user': response['user'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': response['message'] ?? 'Failed to update user assignments',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString().replaceFirst('Exception: ', ''),
+      };
+    }
+  }
 }
