@@ -60,6 +60,8 @@ class UserService {
     String? dateOfBirth,
     String? address,
     String? state,
+    String? place,
+    String? district,
     String? pinCode,
     bool? isVerified,
     bool? isNonWalletUser,
@@ -93,6 +95,12 @@ class UserService {
       }
       if (state != null && state.trim().isNotEmpty) {
         body['state'] = state.trim();
+      }
+      if (place != null && place.trim().isNotEmpty) {
+        body['place'] = place.trim();
+      }
+      if (district != null && district.trim().isNotEmpty) {
+        body['district'] = district.trim();
       }
       if (pinCode != null && pinCode.trim().isNotEmpty) {
         body['pinCode'] = pinCode.trim();

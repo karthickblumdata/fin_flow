@@ -3709,19 +3709,56 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
             debugPrint('═══════════════════════════════════════════════════════════');
             
             // Check if backend returned data array (when accountId filter is applied via /api/wallet/report)
+            // OR transactions array (from getAllWalletReportsWithFilters)
             final backendData = allWalletReportResult['data'] as List?;
-            final hasBackendData = backendData != null && backendData.isNotEmpty;
-            debugPrint('   hasBackendData: $hasBackendData, dataLength: ${hasBackendData ? backendData.length : 0}');
+            final backendTransactions = allWalletReportResult['transactions'] as List?;
+            final dataToUse = backendData ?? backendTransactions;
+            final hasBackendData = dataToUse != null && dataToUse.isNotEmpty;
+            debugPrint('   hasBackendData: $hasBackendData, dataLength: ${hasBackendData ? dataToUse.length : 0}');
+            debugPrint('   backendData: ${backendData != null ? backendData.length : 0} items');
+            debugPrint('   backendTransactions: ${backendTransactions != null ? backendTransactions.length : 0} items');
+            // Debug: Check if createdBy field exists in first collection item
+            if (backendTransactions != null && backendTransactions.isNotEmpty) {
+              final firstItem = backendTransactions.first;
+              if (firstItem is Map && firstItem['type'] == 'Collections') {
+                final createdBy = firstItem['createdBy'];
+                debugPrint('   📋 First Collection item - createdBy: $createdBy (type: ${createdBy.runtimeType})');
+                if (createdBy is Map) {
+                  debugPrint('   📋 createdBy.name: ${createdBy['name']}');
+                }
+              }
+            }
             
             // Transform to match expected format
             // For Account Reports: Use backend data if available, otherwise load detailed data separately
             reportResult = {
               'success': true,
-              'data': hasBackendData ? backendData.map((item) {
+              'data': hasBackendData ? dataToUse.map((item) {
                 if (item is Map<String, dynamic>) {
-                  return Map<String, dynamic>.from(item);
+                  // Deep copy to preserve nested objects like createdBy
+                  final Map<String, dynamic> mappedItem = Map<String, dynamic>.from(item);
+                  // Ensure createdBy is preserved as Map if it exists
+                  if (item['createdBy'] != null) {
+                    if (item['createdBy'] is Map) {
+                      mappedItem['createdBy'] = Map<String, dynamic>.from(item['createdBy'] as Map);
+                    } else {
+                      mappedItem['createdBy'] = item['createdBy'];
+                    }
+                  }
+                  return mappedItem;
                 } else if (item is Map) {
-                  return Map<String, dynamic>.from(item as Map);
+                  // Deep copy to preserve nested objects like createdBy
+                  final Map<String, dynamic> mappedItem = Map<String, dynamic>.from(item as Map);
+                  // Ensure createdBy is preserved as Map if it exists
+                  if ((item as Map)['createdBy'] != null) {
+                    final createdByValue = (item as Map)['createdBy'];
+                    if (createdByValue is Map) {
+                      mappedItem['createdBy'] = Map<String, dynamic>.from(createdByValue as Map);
+                    } else {
+                      mappedItem['createdBy'] = createdByValue;
+                    }
+                  }
+                  return mappedItem;
                 } else {
                   return <String, dynamic>{};
                 }
@@ -3836,9 +3873,30 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
           if (data is List) {
             return data.map((item) {
               if (item is Map<String, dynamic>) {
-                return Map<String, dynamic>.from(item);
+                // Deep copy to preserve nested objects like createdBy
+                final Map<String, dynamic> mappedItem = Map<String, dynamic>.from(item);
+                // Ensure createdBy is preserved as Map if it exists
+                if (item['createdBy'] != null) {
+                  if (item['createdBy'] is Map) {
+                    mappedItem['createdBy'] = Map<String, dynamic>.from(item['createdBy'] as Map);
+                  } else {
+                    mappedItem['createdBy'] = item['createdBy'];
+                  }
+                }
+                return mappedItem;
               } else if (item is Map) {
-                return Map<String, dynamic>.from(item as Map);
+                // Deep copy to preserve nested objects like createdBy
+                final Map<String, dynamic> mappedItem = Map<String, dynamic>.from(item as Map);
+                // Ensure createdBy is preserved as Map if it exists
+                if ((item as Map)['createdBy'] != null) {
+                  final createdByValue = (item as Map)['createdBy'];
+                  if (createdByValue is Map) {
+                    mappedItem['createdBy'] = Map<String, dynamic>.from(createdByValue as Map);
+                  } else {
+                    mappedItem['createdBy'] = createdByValue;
+                  }
+                }
+                return mappedItem;
               } else {
                 return <String, dynamic>{};
               }
@@ -4284,12 +4342,49 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
               }
             }
             
-            // Created by: System if system collection or systematic entry, otherwise collector
-            final createdByName = (isSystemCollection || isSystematicEntry) ? 'System' : collectedByName;
+            // Created by: First check if backend sent createdBy field, otherwise calculate based on flags
+            String createdByName;
+            final backendCreatedBy = itemMap['createdBy'];
+            if (backendCreatedBy != null) {
+              // Backend sent createdBy field - use it (for Entry 2, it will be {name: 'System'})
+              if (backendCreatedBy is Map) {
+                createdByName = (backendCreatedBy['name'] ?? backendCreatedBy['fullName'] ?? backendCreatedBy['displayName'])?.toString() ?? 'Unknown';
+                // Debug log for All Wallet Reports
+                if (itemMap['type'] == 'Collections' && (itemMap['isSystemCollection'] == true)) {
+                  debugPrint('   ✅ [ALL WALLET REPORTS] Collection Entry 2 - Using backend createdBy: ${backendCreatedBy['name']}');
+                }
+              } else if (backendCreatedBy is String && backendCreatedBy.isNotEmpty) {
+                createdByName = backendCreatedBy;
+              } else {
+                // Fallback: System if system collection or systematic entry, otherwise collector
+                createdByName = (isSystemCollection || isSystematicEntry) ? 'System' : collectedByName;
+                if (itemMap['type'] == 'Collections' && (itemMap['isSystemCollection'] == true)) {
+                  debugPrint('   ⚠️  [ALL WALLET REPORTS] Collection Entry 2 - createdBy is not Map, using fallback: $createdByName');
+                }
+              }
+            } else {
+              // Backend didn't send createdBy - calculate based on flags
+              createdByName = (isSystemCollection || isSystematicEntry) ? 'System' : collectedByName;
+              if (itemMap['type'] == 'Collections' && (itemMap['isSystemCollection'] == true)) {
+                debugPrint('   ⚠️  [ALL WALLET REPORTS] Collection Entry 2 - createdBy is null, using fallback: $createdByName');
+              }
+            }
+            
+            // Get 'from' field - for system collections, use the populated 'from' field from backend
+            // For regular collections, use collectedByName
+            String fromName = collectedByName;
+            final fromField = itemMap['from'];
+            if (fromField != null) {
+              if (fromField is Map) {
+                fromName = (fromField['name'] ?? fromField['fullName'] ?? fromField['displayName'])?.toString() ?? collectedByName;
+              } else if (fromField is String && fromField.isNotEmpty) {
+                fromName = fromField;
+              }
+            }
             
             return <String, dynamic>{
               ...itemMap,
-              'from': collectedByName,
+              'from': fromName, // Use populated 'from' field for system collections, otherwise collectedByName
               'to': receiverName,
               'createdBy': createdByName, // Add createdBy field (System for systematic entries)
               'approvedBy': approvedByName.isNotEmpty ? approvedByName : (itemMap['approvedByName']?.toString() ?? ''),
@@ -6994,6 +7089,38 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
     return null;
   }
 
+  /// Extract payment mode name ONLY from paymentMode.modeName (no fallback to mode field)
+  /// Used specifically for All Wallet Report to show paymentModeID name
+  String? _extractPaymentModeNameOnly(dynamic item) {
+    if (item == null) return null;
+    
+    // Priority 1: Try nested paymentMode object (from walletController transformation)
+    final paymentMode = item['paymentMode'];
+    if (paymentMode != null && paymentMode is Map) {
+      final modeName = paymentMode['modeName'] ?? paymentMode['name'] ?? paymentMode['displayName'];
+      if (modeName != null && modeName.toString().trim().isNotEmpty) {
+        return modeName.toString().trim();
+      }
+    }
+    
+    // Priority 2: Try populated paymentModeId object (from expenseController/transactionController populate)
+    // When Mongoose populates paymentModeId, it becomes an object with _id, modeName, description
+    final paymentModeId = item['paymentModeId'];
+    if (paymentModeId != null) {
+      // Check if paymentModeId is a populated object (Map with modeName)
+      if (paymentModeId is Map) {
+        final modeName = paymentModeId['modeName'] ?? paymentModeId['name'] ?? paymentModeId['displayName'];
+        if (modeName != null && modeName.toString().trim().isNotEmpty) {
+          return modeName.toString().trim();
+        }
+      }
+      // If paymentModeId is just an ObjectId string, return null (caller will handle fallback)
+    }
+    
+    // NO FALLBACK to mode field - return null if paymentMode not found
+    return null;
+  }
+
   // Helper: Check if expense/item is approved (including Flagged with approvedBy)
   bool _isItemApproved(dynamic item) {
     final status = item['status']?.toString() ?? '';
@@ -8971,9 +9098,21 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       final type = _displayValue(item['type']).trim();
       final from = _displayValue(item['from']).trim();
       final to = _displayValue(item['to']).trim();
-      // Extract payment mode name (e.g., "ONLINE", "PAY CASH", "MONEY") instead of just payment method type (Cash, UPI, Bank)
-      // Same logic as My Wallet for consistency
-      final mode = (_extractPaymentModeName(item) ?? _displayValue(item['mode']) ?? 'Cash').trim();
+      // Extract payment mode name (e.g., "ONLINE", "PAY CASH", "MONEY") from paymentMode.modeName
+      // Fallback to paymentModeId if paymentMode is null (for All Wallet Report)
+      String? modeName = _extractPaymentModeNameOnly(item);
+      if (modeName == null) {
+        // Fallback: Try to use paymentModeId if available
+        final paymentModeId = item['paymentModeId'];
+        if (paymentModeId != null && paymentModeId.toString().trim().isNotEmpty) {
+          // For All Wallet Report, if paymentMode is null, show paymentModeId
+          // This helps identify which account the transaction belongs to
+          modeName = paymentModeId.toString().trim();
+        } else {
+          modeName = 'Unknown';
+        }
+      }
+      final mode = modeName.trim();
       final amountValue = _parseAmount(item['amount']);
       final approvedBy = _displayValue(item['approvedBy'] ?? item['approved_by']).trim();
       final status = _displayValue(item['status']).trim();
@@ -28831,16 +28970,34 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   final timeStr = DateFormat('hh:mm a').format(date);
                   
                   // Extract createdBy with better fallback for collections
-                  final createdByValue = item['createdBy'] ?? item['created_by'] ?? item['user'] ?? item['collectedBy'] ?? item['performedBy'] ?? item['sender'] ?? item['initiatedBy'];
+                  // For Entry 2 collections (isSystemCollection = true), createdBy should be "System"
                   String createdBy;
-                  if (createdByValue is Map) {
-                    createdBy = createdByValue['name']?.toString() ?? createdByValue['fullName']?.toString() ?? createdByValue['displayName']?.toString() ?? '-';
+                  if (item['type'] == 'Collections' && item['isSystemCollection'] == true) {
+                    // Entry 2 collection - check createdBy first, then fallback to "System"
+                    final createdByValue = item['createdBy'];
+                    if (createdByValue != null) {
+                      if (createdByValue is Map) {
+                        createdBy = createdByValue['name']?.toString() ?? createdByValue['fullName']?.toString() ?? createdByValue['displayName']?.toString() ?? 'System';
+                      } else if (createdByValue is String && createdByValue.isNotEmpty) {
+                        createdBy = createdByValue;
+                      } else {
+                        createdBy = 'System'; // Fallback for Entry 2
+                      }
+                    } else {
+                      createdBy = 'System'; // Entry 2 should always show "System"
+                    }
                   } else {
-                    createdBy = _displayValue(createdByValue);
-                  }
-                  // If still empty or "-", try to get from 'from' field (for collections, from = collectedBy)
-                  if ((createdBy.isEmpty || createdBy == '-') && item['type'] == 'Collections') {
-                    createdBy = _displayValue(item['from']);
+                    // Regular collections or other types - use normal fallback chain
+                    final createdByValue = item['createdBy'] ?? item['created_by'] ?? item['user'] ?? item['collectedBy'] ?? item['performedBy'] ?? item['sender'] ?? item['initiatedBy'];
+                    if (createdByValue is Map) {
+                      createdBy = createdByValue['name']?.toString() ?? createdByValue['fullName']?.toString() ?? createdByValue['displayName']?.toString() ?? '-';
+                    } else {
+                      createdBy = _displayValue(createdByValue);
+                    }
+                    // If still empty or "-", try to get from 'from' field (for collections, from = collectedBy)
+                    if ((createdBy.isEmpty || createdBy == '-') && item['type'] == 'Collections') {
+                      createdBy = _displayValue(item['from']);
+                    }
                   }
                   // If still empty, try 'from' field for other types too
                   if ((createdBy.isEmpty || createdBy == '-') && item['from'] != null) {
@@ -28862,8 +29019,32 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   if (type == 'Expenses') {
                     to = _displayValue(item['category'] ?? item['expenseType'] ?? item['to']);
                   }
-                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") instead of just payment method type (Cash, UPI, Bank)
-                  final mode = _extractPaymentModeName(item) ?? _displayValue(item['mode']) ?? 'Cash';
+                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") from paymentMode.modeName
+                  // Fallback to mode field (Cash/UPI/Bank) if paymentMode is null
+                  String? modeName = _extractPaymentModeNameOnly(item);
+                  if (modeName == null) {
+                    // Fallback 1: Try to use mode field (Cash/UPI/Bank) as it's more meaningful than ObjectId
+                    final modeField = item['mode'];
+                    if (modeField != null && modeField.toString().trim().isNotEmpty) {
+                      modeName = modeField.toString().trim();
+                    } else {
+                      // Fallback 2: Try to use paymentModeId if available (for debugging)
+                      final paymentModeId = item['paymentModeId'];
+                      if (paymentModeId != null && paymentModeId.toString().trim().isNotEmpty) {
+                        // Only show ObjectId if it's not a valid ObjectId format (24 hex chars)
+                        final paymentModeIdStr = paymentModeId.toString().trim();
+                        if (paymentModeIdStr.length == 24 && RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(paymentModeIdStr)) {
+                          // It's an ObjectId, use mode field or Unknown instead
+                          modeName = modeField?.toString().trim() ?? 'Unknown';
+                        } else {
+                          modeName = paymentModeIdStr;
+                        }
+                      } else {
+                        modeName = 'Unknown';
+                      }
+                    }
+                  }
+                  final mode = modeName.trim();
                   final amount = _formatAmount(_parseAmount(item['amount']));
                   final status = _displayValue(item['status']);
                   final accountName = isAllAccounts 
@@ -28898,16 +29079,34 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   final timeStr = DateFormat('hh:mm a').format(date);
                   
                   // Extract createdBy with better fallback for collections
-                  final createdByValue = item['createdBy'] ?? item['created_by'] ?? item['user'] ?? item['collectedBy'] ?? item['performedBy'] ?? item['sender'] ?? item['initiatedBy'];
+                  // For Entry 2 collections (isSystemCollection = true), createdBy should be "System"
                   String createdBy;
-                  if (createdByValue is Map) {
-                    createdBy = createdByValue['name']?.toString() ?? createdByValue['fullName']?.toString() ?? createdByValue['displayName']?.toString() ?? '-';
+                  if (item['type'] == 'Collections' && item['isSystemCollection'] == true) {
+                    // Entry 2 collection - check createdBy first, then fallback to "System"
+                    final createdByValue = item['createdBy'];
+                    if (createdByValue != null) {
+                      if (createdByValue is Map) {
+                        createdBy = createdByValue['name']?.toString() ?? createdByValue['fullName']?.toString() ?? createdByValue['displayName']?.toString() ?? 'System';
+                      } else if (createdByValue is String && createdByValue.isNotEmpty) {
+                        createdBy = createdByValue;
+                      } else {
+                        createdBy = 'System'; // Fallback for Entry 2
+                      }
+                    } else {
+                      createdBy = 'System'; // Entry 2 should always show "System"
+                    }
                   } else {
-                    createdBy = _displayValue(createdByValue);
-                  }
-                  // If still empty or "-", try to get from 'from' field (for collections, from = collectedBy)
-                  if ((createdBy.isEmpty || createdBy == '-') && item['type'] == 'Collections') {
-                    createdBy = _displayValue(item['from']);
+                    // Regular collections or other types - use normal fallback chain
+                    final createdByValue = item['createdBy'] ?? item['created_by'] ?? item['user'] ?? item['collectedBy'] ?? item['performedBy'] ?? item['sender'] ?? item['initiatedBy'];
+                    if (createdByValue is Map) {
+                      createdBy = createdByValue['name']?.toString() ?? createdByValue['fullName']?.toString() ?? createdByValue['displayName']?.toString() ?? '-';
+                    } else {
+                      createdBy = _displayValue(createdByValue);
+                    }
+                    // If still empty or "-", try to get from 'from' field (for collections, from = collectedBy)
+                    if ((createdBy.isEmpty || createdBy == '-') && item['type'] == 'Collections') {
+                      createdBy = _displayValue(item['from']);
+                    }
                   }
                   // If still empty, try 'from' field for other types too
                   if ((createdBy.isEmpty || createdBy == '-') && item['from'] != null) {
@@ -28929,8 +29128,32 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
                   if (type == 'Expenses') {
                     to = _displayValue(item['category'] ?? item['expenseType'] ?? item['to']);
                   }
-                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") instead of just payment method type (Cash, UPI, Bank)
-                  final mode = _extractPaymentModeName(item) ?? _displayValue(item['mode']) ?? 'Cash';
+                  // Extract payment mode name (e.g., "ONLINE", "CASH ONE") from paymentMode.modeName
+                  // Fallback to mode field (Cash/UPI/Bank) if paymentMode is null
+                  String? modeName = _extractPaymentModeNameOnly(item);
+                  if (modeName == null) {
+                    // Fallback 1: Try to use mode field (Cash/UPI/Bank) as it's more meaningful than ObjectId
+                    final modeField = item['mode'];
+                    if (modeField != null && modeField.toString().trim().isNotEmpty) {
+                      modeName = modeField.toString().trim();
+                    } else {
+                      // Fallback 2: Try to use paymentModeId if available (for debugging)
+                      final paymentModeId = item['paymentModeId'];
+                      if (paymentModeId != null && paymentModeId.toString().trim().isNotEmpty) {
+                        // Only show ObjectId if it's not a valid ObjectId format (24 hex chars)
+                        final paymentModeIdStr = paymentModeId.toString().trim();
+                        if (paymentModeIdStr.length == 24 && RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(paymentModeIdStr)) {
+                          // It's an ObjectId, use mode field or Unknown instead
+                          modeName = modeField?.toString().trim() ?? 'Unknown';
+                        } else {
+                          modeName = paymentModeIdStr;
+                        }
+                      } else {
+                        modeName = 'Unknown';
+                      }
+                    }
+                  }
+                  final mode = modeName.trim();
                   final amount = _formatAmount(_parseAmount(item['amount']));
                   // Extract approvedBy name properly for expenses
                   String approvedBy = '-';

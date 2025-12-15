@@ -5,8 +5,8 @@ class PincodeService {
   // Free India Postal API
   static const String _baseUrl = 'https://api.postalpincode.in/pincode';
 
-  /// Get state and district from pincode
-  /// Returns: {'success': true, 'state': 'State Name', 'district': 'District Name'} or {'success': false, 'message': 'Error'}
+  /// Get state, district, and place from pincode
+  /// Returns: {'success': true, 'state': 'State Name', 'district': 'District Name', 'place': 'Place Name'} or {'success': false, 'message': 'Error'}
   static Future<Map<String, dynamic>> getStateFromPincode(String pincode) async {
     if (pincode.isEmpty || pincode.length != 6) {
       return {
@@ -34,12 +34,14 @@ class PincodeService {
             final firstOffice = postOffices[0] as Map<String, dynamic>;
             final state = firstOffice['State']?.toString().trim() ?? '';
             final district = firstOffice['District']?.toString().trim() ?? '';
+            final place = firstOffice['Name']?.toString().trim() ?? '';
             
             if (state.isNotEmpty) {
               return {
                 'success': true,
                 'state': state,
                 'district': district,
+                'place': place,
               };
             }
           }

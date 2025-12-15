@@ -45,6 +45,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
   late final TextEditingController _addressController;
   late final TextEditingController _addressLine2Controller;
   late final TextEditingController _stateController;
+  late final TextEditingController _placeController;
+  late final TextEditingController _districtController;
   late final TextEditingController _pinCodeController;
   late String _phoneFieldKey;
   late String _countryCodeFieldKey;
@@ -52,6 +54,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
   late String _addressFieldKey;
   late String _addressLine2FieldKey;
   late String _stateFieldKey;
+  late String _placeFieldKey;
+  late String _districtFieldKey;
   late String _pinCodeFieldKey;
   late final TextEditingController _roleController;
   String? _selectedRole;
@@ -142,6 +146,22 @@ class _AddUserDialogState extends State<AddUserDialog> {
     _stateFieldKey = stateResolution.key;
     _stateController = TextEditingController(text: stateResolution.value);
 
+    final placeResolution = _resolveField(
+      initial,
+      const ['place', 'city', 'town', 'postOffice'],
+      fallbackKey: 'place',
+    );
+    _placeFieldKey = placeResolution.key;
+    _placeController = TextEditingController(text: placeResolution.value);
+
+    final districtResolution = _resolveField(
+      initial,
+      const ['district', 'dist'],
+      fallbackKey: 'district',
+    );
+    _districtFieldKey = districtResolution.key;
+    _districtController = TextEditingController(text: districtResolution.value);
+
     final pinCodeResolution = _resolveField(
       initial,
       const ['pinCode', 'postalCode', 'zipCode', 'zip', 'pincode'],
@@ -149,7 +169,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
     );
     _pinCodeFieldKey = pinCodeResolution.key;
     _pinCodeController = TextEditingController(text: pinCodeResolution.value);
-    // Add listener to PINCODE field to auto-load state
+    // Add listener to PINCODE field to auto-load state, place, and district
     _pinCodeController.addListener(_handlePincodeChanged);
 
     final resolvedRole = _readString(initial['role']).trim();
@@ -267,16 +287,25 @@ class _AddUserDialogState extends State<AddUserDialog> {
       
       if (result['success'] == true) {
         final state = result['state']?.toString() ?? '';
+        final place = result['place']?.toString() ?? '';
+        final district = result['district']?.toString() ?? '';
+        
         if (state.isNotEmpty) {
           _stateController.text = state;
         }
+        if (place.isNotEmpty) {
+          _placeController.text = place;
+        }
+        if (district.isNotEmpty) {
+          _districtController.text = district;
+        }
       } else {
         // Don't show error, just silently fail
-        // User can manually enter state
+        // User can manually enter state, place, and district
       }
     } catch (e) {
       // Silently handle error
-      print('Error fetching state from pincode: $e');
+      print('Error fetching state, place, and district from pincode: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -298,6 +327,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
     _addressController.dispose();
     _addressLine2Controller.dispose();
     _stateController.dispose();
+    _placeController.dispose();
+    _districtController.dispose();
     _pinCodeController.removeListener(_handlePincodeChanged);
     _pinCodeController.dispose();
     _roleController.dispose();
@@ -619,8 +650,28 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                             labelText: 'State',
                                             hintText: _isLoadingState ? 'Loading...' : 'Enter state',
                                             helperText: _pinCodeController.text.length == 6
-                                                ? 'State will be auto-filled from PIN code'
+                                                ? 'State, Place, and District will be auto-filled from PIN code'
                                                 : null,
+                                          ),
+                                        );
+
+                                        final Widget placeField = TextFormField(
+                                          controller: _placeController,
+                                          enabled: !_isSubmitting,
+                                          textInputAction: TextInputAction.next,
+                                          decoration: InputDecoration(
+                                            labelText: 'Place',
+                                            hintText: _isLoadingState ? 'Loading...' : 'Enter place',
+                                          ),
+                                        );
+
+                                        final Widget districtField = TextFormField(
+                                          controller: _districtController,
+                                          enabled: !_isSubmitting,
+                                          textInputAction: TextInputAction.next,
+                                          decoration: InputDecoration(
+                                            labelText: 'District',
+                                            hintText: _isLoadingState ? 'Loading...' : 'Enter district',
                                           ),
                                         );
 
@@ -646,7 +697,9 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                             SizedBox(height: isMobileLayout ? 16 : 24),
                                             addressGroup,
                                             SizedBox(height: isMobileLayout ? 12 : 16),
-                                            stateField,
+                                            placeField,
+                                            SizedBox(height: isMobileLayout ? 12 : 16),
+                                            districtField,
                                             SizedBox(height: isMobileLayout ? 12 : 16),
                                           ],
                                         );
@@ -667,6 +720,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
                                             _buildNonWalletUserToggle(context),
                                             SizedBox(height: isMobileLayout ? 20 : 32),
                                             pinCodeField,
+                                            SizedBox(height: isMobileLayout ? 12 : 16),
+                                            stateField,
                                           ],
                                         );
 
@@ -1195,6 +1250,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
           _addressFieldKey: _addressController.text.trim(),
           _addressLine2FieldKey: _addressLine2Controller.text.trim(),
           _stateFieldKey: _stateController.text.trim(),
+          _placeFieldKey: _placeController.text.trim(),
+          _districtFieldKey: _districtController.text.trim(),
           _pinCodeFieldKey: _pinCodeController.text.trim(),
           'role': roleName,
           'status': _isActive ? 'Active' : 'Inactive',
@@ -1413,6 +1470,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
           _addressFieldKey: _addressController.text.trim(),
           _addressLine2FieldKey: _addressLine2Controller.text.trim(),
           _stateFieldKey: _stateController.text.trim(),
+          _placeFieldKey: _placeController.text.trim(),
+          _districtFieldKey: _districtController.text.trim(),
           _pinCodeFieldKey: _pinCodeController.text.trim(),
           'role': roleName,
           'status': _isActive ? 'Active' : 'Inactive',
@@ -1633,6 +1692,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
           _addressFieldKey: _addressController.text.trim(),
           _addressLine2FieldKey: _addressLine2Controller.text.trim(),
           _stateFieldKey: _stateController.text.trim(),
+          _placeFieldKey: _placeController.text.trim(),
+          _districtFieldKey: _districtController.text.trim(),
           _pinCodeFieldKey: _pinCodeController.text.trim(),
           'role': roleName,
           'status': _isActive ? 'Active' : 'Inactive',

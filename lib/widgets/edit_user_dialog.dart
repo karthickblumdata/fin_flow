@@ -10,7 +10,7 @@ import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import '../services/role_service.dart';
 import '../services/api_service.dart';
-import '../services/permission_service.dart';
+import '../services/pincode_service.dart';
 import '../utils/api_constants.dart';
 import '../utils/profile_image_helper.dart';
 import '../utils/permission_tree_builder.dart';
@@ -18,6 +18,7 @@ import '../models/permission_node.dart';
 import '../widgets/hierarchical_checkbox.dart';
 import '../widgets/permission_preview_widget.dart';
 import 'role_selector_field.dart';
+import 'dart:async';
 
 class EditUserDialog extends StatefulWidget {
   const EditUserDialog({
@@ -45,6 +46,8 @@ class _EditUserDialogState extends State<EditUserDialog> {
   late final TextEditingController _addressController;
   late final TextEditingController _addressLine2Controller;
   late final TextEditingController _stateController;
+  late final TextEditingController _placeController;
+  late final TextEditingController _districtController;
   late final TextEditingController _pinCodeController;
   late final TextEditingController _roleController;
   late String _selectedRole;
@@ -57,7 +60,11 @@ class _EditUserDialogState extends State<EditUserDialog> {
   late String _addressFieldKey;
   late String _addressLine2FieldKey;
   late String _stateFieldKey;
+  late String _placeFieldKey;
+  late String _districtFieldKey;
   late String _pinCodeFieldKey;
+  bool _isLoadingState = false;
+  Timer? _pincodeDebounceTimer;
   bool _isNonWalletUser = false;
   bool _emailHasInput = false;
   bool _emailIsValid = false;
@@ -181,6 +188,9 @@ class _EditUserDialogState extends State<EditUserDialog> {
     );
     _pinCodeFieldKey = pinCodeResolution.key;
     _pinCodeController = TextEditingController(text: pinCodeResolution.value);
+    // Add listener to PINCODE field to auto-load state, place, and district
+    _pinCodeController.addListener(_handlePincodeChanged);
+    
     final stateResolution = _resolveField(
       widget.user,
       const ['state', 'stateProvince', 'province', 'region', 'stateName'],
@@ -188,6 +198,22 @@ class _EditUserDialogState extends State<EditUserDialog> {
     );
     _stateFieldKey = stateResolution.key;
     _stateController = TextEditingController(text: stateResolution.value);
+
+    final placeResolution = _resolveField(
+      widget.user,
+      const ['place', 'city', 'town', 'postOffice'],
+      fallbackKey: 'place',
+    );
+    _placeFieldKey = placeResolution.key;
+    _placeController = TextEditingController(text: placeResolution.value);
+
+    final districtResolution = _resolveField(
+      widget.user,
+      const ['district', 'dist'],
+      fallbackKey: 'district',
+    );
+    _districtFieldKey = districtResolution.key;
+    _districtController = TextEditingController(text: districtResolution.value);
     _selectedRole = _readString(widget.user['role'], fallback: 'Staff');
     _roleController = TextEditingController(text: _selectedRole);
     _isActive = _normalizeStatus(widget.user['status']) == 'active' ||
@@ -364,6 +390,63 @@ class _EditUserDialogState extends State<EditUserDialog> {
     }
   }
 
+  void _handlePincodeChanged() {
+    // Cancel previous timer
+    _pincodeDebounceTimer?.cancel();
+    
+    final pincode = _pinCodeController.text.trim();
+    
+    // Only fetch if pincode is exactly 6 digits
+    if (pincode.length == 6) {
+      // Debounce: Wait 500ms after user stops typing
+      _pincodeDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+        _fetchStateFromPincode(pincode);
+      });
+    }
+  }
+
+  Future<void> _fetchStateFromPincode(String pincode) async {
+    if (pincode.length != 6) return;
+    
+    setState(() {
+      _isLoadingState = true;
+    });
+
+    try {
+      final result = await PincodeService.getStateFromPincode(pincode);
+      
+      if (!mounted) return;
+      
+      if (result['success'] == true) {
+        final state = result['state']?.toString() ?? '';
+        final place = result['place']?.toString() ?? '';
+        final district = result['district']?.toString() ?? '';
+        
+        if (state.isNotEmpty) {
+          _stateController.text = state;
+        }
+        if (place.isNotEmpty) {
+          _placeController.text = place;
+        }
+        if (district.isNotEmpty) {
+          _districtController.text = district;
+        }
+      } else {
+        // Don't show error, just silently fail
+        // User can manually enter state, place, and district
+      }
+    } catch (e) {
+      // Silently handle error
+      print('Error fetching state, place, and district from pincode: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingState = false;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -375,6 +458,10 @@ class _EditUserDialogState extends State<EditUserDialog> {
     _addressController.dispose();
     _addressLine2Controller.dispose();
     _stateController.dispose();
+    _placeController.dispose();
+    _districtController.dispose();
+    _pincodeDebounceTimer?.cancel();
+    _pinCodeController.removeListener(_handlePincodeChanged);
     _pinCodeController.dispose();
     _roleController.dispose();
     super.dispose();
@@ -665,9 +752,21 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                       FilteringTextInputFormatter.digitsOnly,
                                       LengthLimitingTextInputFormatter(6),
                                     ],
-                                    decoration: const InputDecoration(
+                                    decoration: InputDecoration(
                                       labelText: 'PIN Code',
                                       hintText: 'Enter PIN code',
+                                      suffixIcon: _isLoadingState
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(12.0),
+                                              child: SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              ),
+                                            )
+                                          : null,
                                     ),
                                   );
 
@@ -675,9 +774,32 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                     controller: _stateController,
                                     enabled: !_isSubmitting,
                                     textInputAction: TextInputAction.next,
-                                    decoration: const InputDecoration(
+                                    decoration: InputDecoration(
                                       labelText: 'State',
-                                      hintText: 'Enter state',
+                                      hintText: _isLoadingState ? 'Loading...' : 'Enter state',
+                                      helperText: _pinCodeController.text.length == 6
+                                          ? 'State, Place, and District will be auto-filled from PIN code'
+                                          : null,
+                                    ),
+                                  );
+
+                                  final Widget placeField = TextFormField(
+                                    controller: _placeController,
+                                    enabled: !_isSubmitting,
+                                    textInputAction: TextInputAction.next,
+                                    decoration: InputDecoration(
+                                      labelText: 'Place',
+                                      hintText: _isLoadingState ? 'Loading...' : 'Enter place',
+                                    ),
+                                  );
+
+                                  final Widget districtField = TextFormField(
+                                    controller: _districtController,
+                                    enabled: !_isSubmitting,
+                                    textInputAction: TextInputAction.next,
+                                    decoration: InputDecoration(
+                                      labelText: 'District',
+                                      hintText: _isLoadingState ? 'Loading...' : 'Enter district',
                                     ),
                                   );
 
@@ -703,7 +825,9 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                       const SizedBox(height: 24),
                                       addressGroup,
                                       const SizedBox(height: 16),
-                                      stateField,
+                                      placeField,
+                                      const SizedBox(height: 16),
+                                      districtField,
                                       const SizedBox(height: 16),
                                     ],
                                   );
@@ -724,6 +848,8 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                       _buildNonWalletUserToggle(context),
                                       const SizedBox(height: 32),
                                       pinCodeField,
+                                      const SizedBox(height: 16),
+                                      stateField,
                                     ],
                                   );
 
@@ -796,6 +922,8 @@ class _EditUserDialogState extends State<EditUserDialog> {
                                       formPanel,
                                       const SizedBox(height: 16),
                                       pinCodeField,
+                                      const SizedBox(height: 16),
+                                      stateField,
                                     ],
                                   );
                                 },
@@ -1320,6 +1448,8 @@ class _EditUserDialogState extends State<EditUserDialog> {
         dateOfBirth: formattedDateOfBirth,
         address: _addressController.text.trim(),
         state: _stateController.text.trim(),
+        place: _placeController.text.trim(),
+        district: _districtController.text.trim(),
         pinCode: _pinCodeController.text.trim(),
         isVerified: _isActive,
         isNonWalletUser: _isNonWalletUser,
@@ -1370,6 +1500,8 @@ class _EditUserDialogState extends State<EditUserDialog> {
       updatedUser[_addressFieldKey] = _addressController.text.trim();
       updatedUser[_addressLine2FieldKey] = _addressLine2Controller.text.trim();
       updatedUser[_stateFieldKey] = _stateController.text.trim();
+      updatedUser[_placeFieldKey] = _placeController.text.trim();
+      updatedUser[_districtFieldKey] = _districtController.text.trim();
       updatedUser[_pinCodeFieldKey] = _pinCodeController.text.trim();
       updatedUser['role'] = _roleController.text.trim();
       updatedUser['status'] = _isActive ? 'Active' : 'Inactive';

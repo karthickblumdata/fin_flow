@@ -165,7 +165,9 @@ class AllWalletReportsService {
         print('     - withdrawTotal: ${report['withdrawTotal'] ?? 0}');
         print('   userCount: ${response['userCount'] ?? 0}');
         print('   transactionCount: ${response['transactionCount'] ?? 0}');
-        print('   transactions: ${transactions.length} entries');
+        print('   collectionCount: ${response['collectionCount'] ?? 0}');
+        print('   totalCount: ${response['totalCount'] ?? 0}');
+        print('   transactions: ${(response['transactions'] as List?)?.length ?? 0} items');
         print('   filters: ${response['filters'] ?? 'null'}');
         print('   lastUpdated: ${response['lastUpdated'] ?? 'null'}');
         print('═══════════════════════════════════════════════════════════');
@@ -181,15 +183,18 @@ class AllWalletReportsService {
             'withdrawCount': (report['withdrawCount'] ?? 0),
             'withdrawTotal': (report['withdrawTotal'] ?? 0.0).toDouble(),
           },
-          'transactions': transactions,
+          'transactions': response['transactions'] ?? [], // Include transactions array (WalletTransactions + Collections)
           'filters': {
             'userId': response['filters']?['userId'] ?? queryParams['userId'],
             'userIds': finalUserIds,
             'startDate': response['filters']?['startDate'] ?? startDate?.toIso8601String(),
             'endDate': response['filters']?['endDate'] ?? endDate?.toIso8601String(),
+            'accountId': response['filters']?['accountId'],
           },
           'userCount': response['userCount'] ?? 0,
           'transactionCount': response['transactionCount'] ?? 0,
+          'collectionCount': response['collectionCount'] ?? 0,
+          'totalCount': response['totalCount'] ?? 0,
           'lastUpdated': response['lastUpdated'] ?? DateTime.now().toIso8601String(),
         };
       }
